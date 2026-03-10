@@ -10,7 +10,7 @@ from gmail import get_imap
 from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
-from spotify import get_weekly_listens, get_monthly_recap
+from spotify import get_weekly_listens, get_monthly_recap, get_new_releases
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -115,6 +115,10 @@ def cmd_home_summary():
         monthly = get_monthly_recap() if today.day == 1 else None
     except Exception:
         monthly = None
+    try:
+        new_releases = get_new_releases() if now_local.weekday() == 4 else None  # Friday only
+    except Exception:
+        new_releases = None
     all_devils = get_devils_games(days=14)
     devils = [
         e for e in all_devils
@@ -299,6 +303,44 @@ def cmd_home_summary():
             '<div style="margin-bottom:40px;"></div>'
         )
 
+    # — New releases section (Fridays only) —
+    new_releases_section = ""
+    if new_releases:
+        release_rows = ""
+        for r in new_releases:
+            type_label  = {"single": "Single", "album": "Album", "ep": "EP"}.get(r["type"], r["type"].title())
+            type_color  = {"single": "#88a8d4", "album": "#f0c014", "ep": "#e8a0b0"}.get(r["type"], "#9ca3af")
+            is_last     = (r == new_releases[-1])
+            border      = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            release_rows += (
+                f'<tr>'
+                f'<td style="padding:10px 16px;{border}vertical-align:middle;">'
+                f'<a href="{r["url"]}" style="text-decoration:none;">'
+                f'<div style="font-size:13px;color:#ffffff;font-weight:500;">{safe(r["album"])}</div>'
+                f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{safe(r["artist"])}</div>'
+                f'</a>'
+                f'</td>'
+                f'<td style="padding:10px 16px 10px 0;{border}text-align:right;vertical-align:middle;white-space:nowrap;">'
+                f'<span style="font-size:11px;color:{type_color};font-weight:600;letter-spacing:0.5px;">{type_label}</span>'
+                f'</td>'
+                f'</tr>'
+            )
+
+        new_releases_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">New This Week</p>'
+            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">New releases from artists you listen to</p>'
+            f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+            f'<table style="width:100%;border-collapse:collapse;">{release_rows}</table>'
+            f'</div>'
+        )
+    elif new_releases is not None:  # it's Friday but nothing new
+        new_releases_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">New This Week</p>'
+            '<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">Nothing new from your artists this week.</p>'
+        )
+
     # — Monthly recap section (only on the 1st) —
     monthly_section = ""
     if monthly and monthly["month_total"] > 0:
@@ -388,6 +430,7 @@ def cmd_home_summary():
            if weekend_events else '')
         + f'{devils_section}'
         + listening_section
+        + new_releases_section
         + monthly_section
         + '</div>'   # end white content
         + '</div>'   # end outer wrapper
@@ -419,6 +462,10 @@ def cmd_home_summary():
         plain += f"LISTENING ({listening['total']} plays this week)\n"
         for artist, count in listening["top_artists"]:
             plain += f"  {count}x  {artist}\n"
+    if new_releases:
+        plain += "\nNEW THIS WEEK\n"
+        for r in new_releases:
+            plain += f"  {r['artist']} — {r['album']} ({r['type'].title()})\n  {r['url']}\n"
     if monthly and monthly["month_total"] > 0:
         plain += f"\nMONTHLY RECAP — {monthly['month_name']}\n"
         plain += f"  {monthly['month_total']} plays · {monthly['ytd_total']} YTD\n"

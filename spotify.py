@@ -1,4 +1,5 @@
 from db import get_connection
+from spotify_auth import get_spotify
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict, Counter
@@ -64,6 +65,64 @@ def get_weekly_listens():
         "today_extra":     today_extra,
         "weekly_estimate": weekly_estimate,
     }
+
+
+def get_new_releases():
+    """Return new albums/singles (last 7 days) from artists in listening history."""
+    from datetime import date, timedelta
+    tz       = ZoneInfo("America/New_York")
+    today    = datetime.now(tz).date()
+    cutoff   = today - timedelta(days=7)
+
+    # Get top artist IDs from recent listening history (last 60 days)
+    conn   = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT artist_id, artist_name, COUNT(*) AS plays
+        FROM spotify_plays
+        WHERE played_at >= UTC_TIMESTAMP() - INTERVAL 60 DAY
+          AND artist_id IS NOT NULL
+        GROUP BY artist_id, artist_name
+        ORDER BY plays DESC
+        LIMIT 30
+    """)
+    artists = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    sp       = get_spotify()
+    releases = []
+    seen_ids = set()
+
+    for artist in artists:
+        try:
+            result = sp.artist_albums(
+                artist["artist_id"],
+                album_type="album,single",
+                limit=5
+            )
+            for album in result.get("items", []):
+                if album["id"] in seen_ids:
+                    continue
+                rel_date = album.get("release_date", "")
+                # release_date can be YYYY, YYYY-MM, or YYYY-MM-DD
+                if len(rel_date) < 10:
+                    continue
+                if rel_date >= cutoff.isoformat():
+                    seen_ids.add(album["id"])
+                    releases.append({
+                        "artist":    artist["artist_name"],
+                        "album":     album["name"],
+                        "type":      album["album_type"],   # album / single / ep
+                        "date":      rel_date,
+                        "url":       album["external_urls"].get("spotify", ""),
+                        "image_url": album["images"][1]["url"] if len(album["images"]) > 1 else "",
+                    })
+        except Exception:
+            continue
+
+    releases.sort(key=lambda r: r["date"], reverse=True)
+    return releases
 
 
 def get_monthly_recap():
