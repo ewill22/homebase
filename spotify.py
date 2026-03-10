@@ -125,6 +125,46 @@ def get_new_releases():
     return releases
 
 
+def get_top_artist_new_releases(exclude_ids=None, limit=10):
+    """Return new releases (last 7 days) from Spotify's all-time top artists."""
+    from datetime import date, timedelta
+    cutoff     = (date.today() - timedelta(days=7)).isoformat()
+    exclude    = exclude_ids or set()
+    sp         = get_spotify()
+
+    top = sp.current_user_top_artists(time_range="long_term", limit=50)
+    artists = top.get("items", [])
+
+    releases = []
+    seen_ids = set(exclude)
+
+    for artist in artists:
+        try:
+            result = sp.artist_albums(artist["id"], album_type="album,single", limit=5)
+            for album in result.get("items", []):
+                if album["id"] in seen_ids:
+                    continue
+                rel_date = album.get("release_date", "")
+                if len(rel_date) < 10 or rel_date < cutoff:
+                    continue
+                seen_ids.add(album["id"])
+                releases.append({
+                    "artist":    artist["name"],
+                    "album":     album["name"],
+                    "type":      album["album_type"],
+                    "date":      rel_date,
+                    "url":       album["external_urls"].get("spotify", ""),
+                    "image_url": album["images"][1]["url"] if len(album["images"]) > 1 else "",
+                })
+        except Exception:
+            continue
+        if len(releases) >= limit:
+            break
+
+    releases.sort(key=lambda r: r["date"], reverse=True)
+    return releases
+
+
 def get_monthly_recap():
     """Return last month's listening stats + YTD counts."""
     from datetime import date

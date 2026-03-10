@@ -10,7 +10,7 @@ from gmail import get_imap
 from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
-from spotify import get_weekly_listens, get_monthly_recap, get_new_releases
+from spotify import get_weekly_listens, get_monthly_recap, get_new_releases, get_top_artist_new_releases
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -119,6 +119,11 @@ def cmd_home_summary():
         new_releases = get_new_releases() if now_local.weekday() == 4 else None  # Friday only
     except Exception:
         new_releases = None
+    try:
+        _recent_ids      = {r["url"] for r in new_releases} if new_releases else set()
+        top_releases     = get_top_artist_new_releases(exclude_ids=_recent_ids) if now_local.weekday() == 4 else None
+    except Exception:
+        top_releases = None
     all_devils = get_devils_games(days=14)
     devils = [
         e for e in all_devils
@@ -304,51 +309,58 @@ def cmd_home_summary():
         )
 
     # — New releases section (Fridays only) —
-    new_releases_section = ""
-    if new_releases:
-        release_rows = ""
-        for r in new_releases:
-            type_label  = {"single": "Single", "album": "Album", "ep": "EP"}.get(r["type"], r["type"].title())
-            type_color  = {"single": "#88a8d4", "album": "#f0c014", "ep": "#e8a0b0"}.get(r["type"], "#9ca3af")
-            is_last     = (r == new_releases[-1])
-            border      = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+    def build_release_rows(releases):
+        rows = ""
+        for r in releases:
+            type_label = {"single": "Single", "album": "Album", "ep": "EP"}.get(r["type"], r["type"].title())
+            type_color = {"single": "#88a8d4", "album": "#f0c014", "ep": "#e8a0b0"}.get(r["type"], "#9ca3af")
+            is_last    = (r == releases[-1])
+            border     = "" if is_last else "border-bottom:1px solid #1f1f1f;"
             img_td = (
                 f'<td style="padding:10px 0 10px 14px;{border}vertical-align:middle;width:52px;">'
                 f'<a href="{r["url"]}" style="text-decoration:none;">'
                 f'<img src="{r["image_url"]}" width="44" height="44" style="display:block;border-radius:4px;" alt="" />'
-                f'</a>'
-                f'</td>'
+                f'</a></td>'
             ) if r["image_url"] else f'<td style="{border}width:14px;"></td>'
-
-            release_rows += (
-                f'<tr>'
-                f'{img_td}'
+            rows += (
+                f'<tr>{img_td}'
                 f'<td style="padding:10px 12px;{border}vertical-align:middle;">'
                 f'<a href="{r["url"]}" style="text-decoration:none;">'
                 f'<div style="font-size:13px;color:#ffffff;font-weight:500;">{safe(r["album"])}</div>'
                 f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{safe(r["artist"])}</div>'
-                f'</a>'
-                f'</td>'
+                f'</a></td>'
                 f'<td style="padding:10px 14px 10px 0;{border}text-align:right;vertical-align:middle;white-space:nowrap;">'
                 f'<span style="font-size:11px;color:{type_color};font-weight:600;letter-spacing:0.5px;">{type_label}</span>'
-                f'</td>'
-                f'</tr>'
+                f'</td></tr>'
             )
+        return rows
 
-        new_releases_section = (
-            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">New This Week</p>'
-            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">New releases from artists you listen to</p>'
-            f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
-            f'<table style="width:100%;border-collapse:collapse;">{release_rows}</table>'
-            f'</div>'
-        )
-    elif new_releases is not None:  # it's Friday but nothing new
-        new_releases_section = (
-            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">New This Week</p>'
-            '<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">Nothing new from your artists this week.</p>'
-        )
+    new_releases_section = ""
+    if new_releases is not None or top_releases is not None:
+        sections_html = '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+        sections_html += '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 32px;">New This Week</p>'
+
+        if new_releases:
+            sections_html += (
+                '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 10px;">From your recent listening</p>'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:28px;">'
+                f'<table style="width:100%;border-collapse:collapse;">{build_release_rows(new_releases)}</table>'
+                f'</div>'
+            )
+        elif new_releases is not None:
+            sections_html += '<p style="font-size:13px;color:#aeaeb2;margin:0 0 28px;">Nothing new from your recent artists this week.</p>'
+
+        if top_releases:
+            sections_html += (
+                '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 10px;">From your top artists</p>'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+                f'<table style="width:100%;border-collapse:collapse;">{build_release_rows(top_releases)}</table>'
+                f'</div>'
+            )
+        elif top_releases is not None:
+            sections_html += '<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">Nothing new from your top artists this week.</p>'
+
+        new_releases_section = sections_html
 
     # — Monthly recap section (only on the 1st) —
     monthly_section = ""
@@ -408,9 +420,9 @@ def cmd_home_summary():
     LOGO_URL = "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
     date_str = datetime.now(ZoneInfo("America/New_York")).strftime('%A, %B %d')
     html = (
-        '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Helvetica Neue\',Helvetica,Arial,sans-serif;max-width:540px;margin:0 auto;">'
+        '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Helvetica Neue\',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;">'
         # — Guapa nav strip —
-        '<div style="background:#0a0a0a;border-bottom:1px solid #1f1f1f;padding:11px 40px;">'
+        '<div style="background:#0a0a0a;border-bottom:1px solid #1f1f1f;padding:11px 28px;">'
         '<table style="width:100%;border-collapse:collapse;"><tr>'
         '<td style="vertical-align:middle;">'
         f'<img src="{LOGO_URL}" height="22" style="display:inline-block;vertical-align:middle;" alt="Guapa" />'
@@ -423,7 +435,7 @@ def cmd_home_summary():
         '</tr></table>'
         '</div>'
         # — White content area —
-        '<div style="background:#ffffff;padding:40px 40px 48px;">'
+        '<div style="background:#ffffff;padding:36px 28px 48px;">'
         f'<p style="font-size:24px;font-weight:600;color:#1d1d1f;margin:0 0 4px;letter-spacing:-0.3px;">{safe(greeting)}</p>'
         f'<p style="font-size:15px;color:#6e6e73;margin:0 0 6px;">{date_str}</p>'
         f'<p style="font-size:12px;color:#aeaeb2;margin:0 0 40px;">Day {day_of_life:,} of your life</p>'
