@@ -312,15 +312,24 @@ def cmd_home_summary():
             type_color  = {"single": "#88a8d4", "album": "#f0c014", "ep": "#e8a0b0"}.get(r["type"], "#9ca3af")
             is_last     = (r == new_releases[-1])
             border      = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            img_td = (
+                f'<td style="padding:10px 0 10px 14px;{border}vertical-align:middle;width:52px;">'
+                f'<a href="{r["url"]}" style="text-decoration:none;">'
+                f'<img src="{r["image_url"]}" width="44" height="44" style="display:block;border-radius:4px;" alt="" />'
+                f'</a>'
+                f'</td>'
+            ) if r["image_url"] else f'<td style="{border}width:14px;"></td>'
+
             release_rows += (
                 f'<tr>'
-                f'<td style="padding:10px 16px;{border}vertical-align:middle;">'
+                f'{img_td}'
+                f'<td style="padding:10px 12px;{border}vertical-align:middle;">'
                 f'<a href="{r["url"]}" style="text-decoration:none;">'
                 f'<div style="font-size:13px;color:#ffffff;font-weight:500;">{safe(r["album"])}</div>'
                 f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{safe(r["artist"])}</div>'
                 f'</a>'
                 f'</td>'
-                f'<td style="padding:10px 16px 10px 0;{border}text-align:right;vertical-align:middle;white-space:nowrap;">'
+                f'<td style="padding:10px 14px 10px 0;{border}text-align:right;vertical-align:middle;white-space:nowrap;">'
                 f'<span style="font-size:11px;color:{type_color};font-weight:600;letter-spacing:0.5px;">{type_label}</span>'
                 f'</td>'
                 f'</tr>'
