@@ -1,0 +1,13 @@
+# secrets & credentials
+.env
+credentials.json
+token.json
+.spotify_token
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+
+# logs
+*.log
