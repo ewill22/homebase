@@ -10,6 +10,7 @@ from gmail import get_imap
 from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
+from spotify import get_weekly_listens
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -106,6 +107,10 @@ def cmd_home_summary():
     # 40% chance of a fortune, otherwise small talk
     greeting = random.choice(fortunes if random.random() < 0.4 else small_talk)
     today = datetime.now(ZoneInfo("America/New_York")).date()
+    try:
+        listening = get_weekly_listens()
+    except Exception:
+        listening = None
     all_devils = get_devils_games(days=14)
     devils = [
         e for e in all_devils
@@ -185,6 +190,29 @@ def cmd_home_summary():
             f'<table style="width:100%;border-collapse:collapse;">{event_rows(devils)}</table>'
         )
 
+    listening_section = ""
+    if listening and listening["total"] > 0:
+        def listen_rows(items):
+            rows = ""
+            for label, count in items:
+                rows += (
+                    '<tr>'
+                    f'<td style="font-size:14px;color:#1d1d1f;padding:5px 0;">{safe(label)}</td>'
+                    f'<td style="font-size:13px;color:#aeaeb2;padding:5px 0 5px 16px;text-align:right;white-space:nowrap;">{count}x</td>'
+                    '</tr>'
+                )
+            return rows
+
+        listening_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Listening</p>'
+            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{listening["total"]} plays in the last 7 days</p>'
+            '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 8px;">Top tracks</p>'
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px;">{listen_rows(listening["top_tracks"])}</table>'
+            '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 8px;">Top artists</p>'
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{listen_rows(listening["top_artists"])}</table>'
+        )
+
     from datetime import date as date_type
     birthday = date_type(1991, 5, 11)
     day_of_life = (today - birthday).days + 1
@@ -207,6 +235,7 @@ def cmd_home_summary():
            f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{event_rows(weekend_events)}</table>'
            if weekend_events else '')
         + f'{devils_section}'
+        + listening_section
         + '</div>'
     )
 
@@ -231,7 +260,11 @@ def cmd_home_summary():
     if weekend_events:
         plain += f"WEEKEND\n{plain_rows(weekend_events)}\n"
     if devils:
-        plain += f"DEVILS\n{plain_rows(devils)}"
+        plain += f"DEVILS\n{plain_rows(devils)}\n"
+    if listening and listening["total"] > 0:
+        plain += f"LISTENING ({listening['total']} plays)\n"
+        for label, count in listening["top_tracks"]:
+            plain += f"  {count}x  {label}\n"
 
     return {"text": plain, "html": html}
 

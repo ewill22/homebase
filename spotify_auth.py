@@ -3,6 +3,8 @@ from spotipy.oauth2 import SpotifyOAuth
 from dotenv import load_dotenv
 import os
 
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
 load_dotenv()
 
 SCOPE = "user-read-recently-played user-top-read"
@@ -14,7 +16,7 @@ def get_spotify():
         client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
         redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
         scope=SCOPE,
-        cache_path=".spotify_token"
+        cache_path=os.path.join(_DIR, ".spotify_token")
     ))
 
 if __name__ == "__main__":
