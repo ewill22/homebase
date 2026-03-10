@@ -10,7 +10,7 @@ from gmail import get_imap
 from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
-from spotify import get_weekly_listens
+from spotify import get_weekly_listens, get_monthly_recap
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -111,6 +111,10 @@ def cmd_home_summary():
         listening = get_weekly_listens()
     except Exception:
         listening = None
+    try:
+        monthly = get_monthly_recap() if today.day == 1 else None
+    except Exception:
+        monthly = None
     all_devils = get_devils_games(days=14)
     devils = [
         e for e in all_devils
@@ -295,6 +299,57 @@ def cmd_home_summary():
             '<div style="margin-bottom:40px;"></div>'
         )
 
+    # — Monthly recap section (only on the 1st) —
+    monthly_section = ""
+    if monthly and monthly["month_total"] > 0:
+        max_month = monthly["top_artists"][0][1] if monthly["top_artists"] else 1
+
+        artist_rows = ""
+        for j, (name, month_count, ytd_count) in enumerate(monthly["top_artists"]):
+            color   = ARTIST_COLORS[j] if listening else "#f0c014"
+            bar_pct = round(month_count / max_month * 100)
+            artist_rows += (
+                f'<tr>'
+                f'<td style="padding:7px 14px 7px 16px;font-size:13px;color:#9ca3af;white-space:nowrap;width:1%;">'
+                f'<div style="width:10px;height:10px;border-radius:2px;background:{color};display:inline-block;vertical-align:middle;margin-right:6px;"></div>'
+                f'{safe(name)}</td>'
+                f'<td style="padding:7px 12px 7px 0;">'
+                f'<div style="background:#1f1f1f;border-radius:3px;height:6px;width:100%;">'
+                f'<div style="background:{color};border-radius:3px;height:6px;width:{bar_pct}%;"></div>'
+                f'</div></td>'
+                f'<td style="padding:7px 16px 7px 8px;font-size:13px;color:#9ca3af;text-align:right;white-space:nowrap;font-weight:500;">{month_count}</td>'
+                f'<td style="padding:7px 16px 7px 0;font-size:11px;color:#6b7280;text-align:right;white-space:nowrap;">{ytd_count} YTD</td>'
+                f'</tr>'
+            )
+
+        track_rows = ""
+        for i, (label, count) in enumerate(monthly["top_tracks"]):
+            is_last  = (i == len(monthly["top_tracks"]) - 1)
+            border   = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            track_rows += (
+                f'<tr>'
+                f'<td style="padding:7px 16px;{border}font-size:13px;color:#9ca3af;">{safe(label)}</td>'
+                f'<td style="padding:7px 16px 7px 0;{border}font-size:13px;color:#6b7280;text-align:right;font-weight:500;">{count}</td>'
+                f'</tr>'
+            )
+
+        monthly_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Monthly Recap</p>'
+            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">'
+            f'{monthly["month_total"]} plays in {monthly["month_name"]}'
+            f' &middot; {monthly["ytd_total"]} plays {monthly["ytd_year"]} YTD</p>'
+            f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+            f'<div style="padding:4px 0;">'
+            f'<table style="width:100%;border-collapse:collapse;">{artist_rows}</table>'
+            f'</div>'
+            f'<div style="border-top:1px solid #1f1f1f;padding:8px 0 4px;">'
+            f'<p style="font-size:10px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#6b7280;margin:4px 16px 8px;">Top Tracks</p>'
+            f'<table style="width:100%;border-collapse:collapse;">{track_rows}</table>'
+            f'</div>'
+            f'</div>'
+        )
+
     from datetime import date as date_type
     birthday = date_type(1991, 5, 11)
     day_of_life = (today - birthday).days + 1
@@ -333,6 +388,7 @@ def cmd_home_summary():
            if weekend_events else '')
         + f'{devils_section}'
         + listening_section
+        + monthly_section
         + '</div>'   # end white content
         + '</div>'   # end outer wrapper
     )
@@ -363,6 +419,11 @@ def cmd_home_summary():
         plain += f"LISTENING ({listening['total']} plays this week)\n"
         for artist, count in listening["top_artists"]:
             plain += f"  {count}x  {artist}\n"
+    if monthly and monthly["month_total"] > 0:
+        plain += f"\nMONTHLY RECAP — {monthly['month_name']}\n"
+        plain += f"  {monthly['month_total']} plays · {monthly['ytd_total']} YTD\n"
+        for name, count, ytd in monthly["top_artists"]:
+            plain += f"  {count}x  {name}  ({ytd} YTD)\n"
 
     return {"text": plain, "html": html}
 
