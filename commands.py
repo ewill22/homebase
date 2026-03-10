@@ -192,35 +192,132 @@ def cmd_home_summary():
 
     listening_section = ""
     if listening and listening["total"] > 0:
-        def listen_rows(items):
-            rows = ""
-            for label, count in items:
-                rows += (
-                    '<tr>'
-                    f'<td style="font-size:14px;color:#1d1d1f;padding:5px 0;">{safe(label)}</td>'
-                    f'<td style="font-size:13px;color:#aeaeb2;padding:5px 0 5px 16px;text-align:right;white-space:nowrap;">{count}x</td>'
-                    '</tr>'
-                )
-            return rows
+        from spotify import ARTIST_COLORS, OTHER_COLOR
+        top_names   = [a[0] for a in listening["top_artists"]]
+        daily       = listening["daily"]
+        today_extra = listening["today_extra"]
+        MAX_H       = 100
+
+        max_plays = max(
+            (d["total"] + (today_extra if i == 6 else 0))
+            for i, d in enumerate(daily)
+        ) or 1
+
+        def scale(n):
+            return round(n * MAX_H / max_plays)
+
+        cols = ""
+        for i, d in enumerate(daily):
+            is_today  = (i == 6)
+            total     = d["total"]
+            est_h     = scale(today_extra) if is_today and today_extra > 0 else 0
+
+            # Build segments bottom-up (last in list = bottom of bar)
+            segments = []
+            if d["other"] > 0:
+                segments.append(f'<div style="background:{OTHER_COLOR};height:{scale(d["other"])}px;"></div>')
+            for j in range(len(top_names) - 1, -1, -1):
+                cnt = d["top"].get(top_names[j], 0)
+                if cnt > 0:
+                    segments.append(f'<div style="background:{ARTIST_COLORS[j]};height:{scale(cnt)}px;"></div>')
+
+            bar_h    = scale(total)
+            spacer_h = MAX_H - bar_h - est_h
+
+            count_label = (
+                f'<div style="font-size:11px;color:#9ca3af;text-align:center;margin-bottom:5px;font-weight:500;">{total}</div>'
+                if total > 0 else
+                '<div style="height:20px;"></div>'
+            )
+            est_div = (
+                f'<div style="border:1px dashed #3a3a3a;height:{est_h}px;box-sizing:border-box;border-radius:3px 3px 0 0;"></div>'
+                if est_h > 0 else ""
+            )
+            spacer_div = f'<div style="height:{spacer_h}px;"></div>' if spacer_h > 0 else ""
+
+            # Rounded top on the bar column (clips topmost segment)
+            bar_radius = "border-radius:3px 3px 0 0;overflow:hidden;" if total > 0 else ""
+
+            day_name    = d["date"].strftime("%a")
+            day_num     = str(d["date"].day)
+            label_color = "#f0c014" if is_today else "#6b7280"
+
+            cols += (
+                f'<td style="text-align:center;vertical-align:top;padding:0 3px;">'
+                f'{count_label}'
+                f'<div style="height:{MAX_H}px;">'
+                f'{spacer_div}{est_div}'
+                f'<div style="{bar_radius}">{"".join(segments)}</div>'
+                f'</div>'
+                f'<div style="font-size:11px;color:{label_color};margin-top:7px;font-weight:{"600" if is_today else "400"};">{day_name}</div>'
+                f'<div style="font-size:10px;color:{label_color};margin-top:1px;opacity:0.7;">{day_num}</div>'
+                f'</td>'
+            )
+
+        legend_rows = ""
+        artists_for_legend = list(listening["top_artists"])
+        if any(d["other"] > 0 for d in daily):
+            other_total = sum(d["other"] for d in daily)
+            artists_for_legend.append(("Other", other_total))
+
+        for j, (name, count) in enumerate(artists_for_legend):
+            color = ARTIST_COLORS[j] if j < len(ARTIST_COLORS) else "#9ca3af"
+            is_last = (j == len(artists_for_legend) - 1)
+            border = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            legend_rows += (
+                f'<tr>'
+                f'<td style="padding:8px 16px;{border}width:16px;">'
+                f'<div style="width:10px;height:10px;border-radius:2px;background:{color};"></div>'
+                f'</td>'
+                f'<td style="padding:8px 0;{border}font-size:13px;color:#9ca3af;">{safe(name)}</td>'
+                f'<td style="padding:8px 16px;{border}text-align:right;font-size:13px;color:#6b7280;font-weight:500;">{count}</td>'
+                f'</tr>'
+            )
+
+        est_note = f' &middot; ~{listening["weekly_estimate"]} on pace' if today_extra > 0 else ""
+
+        chart = (
+            f'<div style="background:#111111;border-radius:8px;overflow:hidden;">'
+            f'<div style="padding:20px 16px 16px;">'
+            f'<table style="width:100%;border-collapse:collapse;"><tr>{cols}</tr></table>'
+            f'</div>'
+            f'<div style="border-top:1px solid #1f1f1f;">'
+            f'<table style="width:100%;border-collapse:collapse;">{legend_rows}</table>'
+            f'</div>'
+            f'</div>'
+        )
 
         listening_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
             '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Listening</p>'
-            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{listening["total"]} plays in the last 7 days</p>'
-            '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 8px;">Top tracks</p>'
-            f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px;">{listen_rows(listening["top_tracks"])}</table>'
-            '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 8px;">Top artists</p>'
-            f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{listen_rows(listening["top_artists"])}</table>'
+            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{listening["total"]} plays this week{est_note}</p>'
+            f'{chart}'
+            '<div style="margin-bottom:40px;"></div>'
         )
 
     from datetime import date as date_type
     birthday = date_type(1991, 5, 11)
     day_of_life = (today - birthday).days + 1
 
+    LOGO_URL = "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
     date_str = datetime.now(ZoneInfo("America/New_York")).strftime('%A, %B %d')
     html = (
-        '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Helvetica Neue\',Helvetica,Arial,sans-serif;max-width:540px;margin:0 auto;background:#ffffff;padding:48px 40px;">'
-        '<p style="font-size:13px;font-weight:600;letter-spacing:0.5px;color:#6e6e73;margin:0 0 2px;">homebase</p>'
+        '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Helvetica Neue\',Helvetica,Arial,sans-serif;max-width:540px;margin:0 auto;">'
+        # — Guapa nav strip —
+        '<div style="background:#0a0a0a;border-bottom:1px solid #1f1f1f;padding:11px 40px;">'
+        '<table style="width:100%;border-collapse:collapse;"><tr>'
+        '<td style="vertical-align:middle;">'
+        f'<img src="{LOGO_URL}" height="22" style="display:inline-block;vertical-align:middle;" alt="Guapa" />'
+        '<span style="font-size:13px;font-weight:700;letter-spacing:0.08em;color:#ffffff;vertical-align:middle;margin-left:8px;">GUAPA</span>'
+        '<span style="font-size:8px;font-weight:400;color:#6b7280;vertical-align:middle;margin-left:3px;">inc</span>'
+        '</td>'
+        '<td style="text-align:right;vertical-align:middle;">'
+        '<span style="font-size:11px;color:#6b7280;letter-spacing:0.5px;font-weight:500;">homebase</span>'
+        '</td>'
+        '</tr></table>'
+        '</div>'
+        # — White content area —
+        '<div style="background:#ffffff;padding:40px 40px 48px;">'
         f'<p style="font-size:24px;font-weight:600;color:#1d1d1f;margin:0 0 4px;letter-spacing:-0.3px;">{safe(greeting)}</p>'
         f'<p style="font-size:15px;color:#6e6e73;margin:0 0 6px;">{date_str}</p>'
         f'<p style="font-size:12px;color:#aeaeb2;margin:0 0 40px;">Day {day_of_life:,} of your life</p>'
@@ -236,7 +333,8 @@ def cmd_home_summary():
            if weekend_events else '')
         + f'{devils_section}'
         + listening_section
-        + '</div>'
+        + '</div>'   # end white content
+        + '</div>'   # end outer wrapper
     )
 
     # — plain text fallback —
@@ -262,9 +360,9 @@ def cmd_home_summary():
     if devils:
         plain += f"DEVILS\n{plain_rows(devils)}\n"
     if listening and listening["total"] > 0:
-        plain += f"LISTENING ({listening['total']} plays)\n"
-        for label, count in listening["top_tracks"]:
-            plain += f"  {count}x  {label}\n"
+        plain += f"LISTENING ({listening['total']} plays this week)\n"
+        for artist, count in listening["top_artists"]:
+            plain += f"  {count}x  {artist}\n"
 
     return {"text": plain, "html": html}
 
