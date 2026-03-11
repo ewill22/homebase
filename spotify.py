@@ -14,7 +14,7 @@ def get_weekly_listens():
     cursor.execute("""
         SELECT played_at, artist_name
         FROM spotify_plays
-        WHERE played_at >= UTC_TIMESTAMP() - INTERVAL 7 DAY
+        WHERE played_at >= NOW() - INTERVAL 7 DAY
         ORDER BY played_at
     """)
     rows = cursor.fetchall()
@@ -80,7 +80,7 @@ def get_new_releases():
     cursor.execute("""
         SELECT artist_id, artist_name, COUNT(*) AS plays
         FROM spotify_plays
-        WHERE played_at >= UTC_TIMESTAMP() - INTERVAL 60 DAY
+        WHERE played_at >= NOW() - INTERVAL 60 DAY
           AND artist_id IS NOT NULL
         GROUP BY artist_id, artist_name
         ORDER BY plays DESC

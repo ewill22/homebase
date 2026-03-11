@@ -5,6 +5,9 @@ Run on a schedule (every 5 min) to build a complete listening history.
 from spotify_auth import get_spotify
 from db import get_connection
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
 
 def sync_recent_plays():
     sp = get_spotify()
@@ -23,7 +26,7 @@ def sync_recent_plays():
 
         played_at = datetime.fromisoformat(
             item["played_at"].replace("Z", "+00:00")
-        ).astimezone(timezone.utc).replace(tzinfo=None)  # store as UTC naive
+        ).astimezone(ET).replace(tzinfo=None)  # store as ET naive
 
         primary_artist  = artists[0] if artists else {}
         extra_artists   = ", ".join(a["name"] for a in artists[1:]) or None
