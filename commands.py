@@ -417,6 +417,28 @@ def cmd_home_summary():
     birthday = date_type(1991, 5, 11)
     day_of_life = (today - birthday).days + 1
 
+    # — Calendar section: dynamic header based on day of week —
+    weekday = today.weekday()  # 0=Mon, 6=Sun
+    cal_hr = '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+    cal_label = '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">{}</p>'
+    cal_table = '<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{}</table>'
+
+    calendar_section = ""
+    if weekday <= 2:  # Mon–Wed
+        if workday_events:
+            calendar_section += cal_hr + cal_label.format("What's up next this week") + cal_table.format(event_rows(workday_events))
+        if weekend_events:
+            calendar_section += cal_hr + cal_label.format("Weekend") + cal_table.format(event_rows(weekend_events))
+    elif weekday <= 5:  # Thu–Sat
+        if workday_events and weekday <= 4:
+            calendar_section += cal_hr + cal_label.format("What's up next this week") + cal_table.format(event_rows(workday_events))
+        if weekend_events:
+            calendar_section += cal_hr + cal_label.format("What's going on this weekend") + cal_table.format(event_rows(weekend_events))
+    else:  # Sun
+        all_events = workday_events + weekend_events
+        if all_events:
+            calendar_section += cal_hr + cal_label.format("Next week") + cal_table.format(event_rows(all_events))
+
     LOGO_URL = "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
     date_str = datetime.now(ZoneInfo("America/New_York")).strftime('%A, %B %d')
     html = (
@@ -441,14 +463,7 @@ def cmd_home_summary():
         f'<p style="font-size:12px;color:#aeaeb2;margin:0 0 40px;">Day {day_of_life:,} of your life</p>'
         '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Weather</p>'
         f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{city_rows}</table>'
-        + ('<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-           '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Workdays</p>'
-           f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{event_rows(workday_events)}</table>'
-           if workday_events else '')
-        + ('<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-           '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Weekend</p>'
-           f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{event_rows(weekend_events)}</table>'
-           if weekend_events else '')
+        + calendar_section
         + f'{devils_section}'
         + listening_section
         + new_releases_section
@@ -473,10 +488,20 @@ def cmd_home_summary():
     for c in cities:
         plain += f"  {c['name']}: {c['temp']}{c['unit']}, {c['humidity']}% humidity, {c['wind']} {c['wind_unit']}\n"
     plain += "\n"
-    if workday_events:
-        plain += f"WORKDAYS\n{plain_rows(workday_events)}\n"
-    if weekend_events:
-        plain += f"WEEKEND\n{plain_rows(weekend_events)}\n"
+    if weekday <= 2:
+        if workday_events:
+            plain += f"WHAT'S UP NEXT THIS WEEK\n{plain_rows(workday_events)}\n"
+        if weekend_events:
+            plain += f"WEEKEND\n{plain_rows(weekend_events)}\n"
+    elif weekday <= 5:
+        if workday_events and weekday <= 4:
+            plain += f"WHAT'S UP NEXT THIS WEEK\n{plain_rows(workday_events)}\n"
+        if weekend_events:
+            plain += f"WHAT'S GOING ON THIS WEEKEND\n{plain_rows(weekend_events)}\n"
+    else:
+        all_events = workday_events + weekend_events
+        if all_events:
+            plain += f"NEXT WEEK\n{plain_rows(all_events)}\n"
     if devils:
         plain += f"DEVILS\n{plain_rows(devils)}\n"
     if listening and listening["total"] > 0:
