@@ -115,15 +115,21 @@ def cmd_home_summary():
         monthly = get_monthly_recap() if today.day == 1 else None
     except Exception:
         monthly = None
+    import concurrent.futures
+    def _fetch_releases():
+        nr = get_new_releases()
+        ids = {r["url"] for r in nr} if nr else set()
+        tr = get_top_artist_new_releases(exclude_ids=ids)
+        return nr, tr
+
+    new_releases = None
+    top_releases = None
     try:
-        new_releases = get_new_releases()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(_fetch_releases)
+            new_releases, top_releases = future.result(timeout=90)
     except Exception:
-        new_releases = None
-    try:
-        _recent_ids  = {r["url"] for r in new_releases} if new_releases else set()
-        top_releases = get_top_artist_new_releases(exclude_ids=_recent_ids)
-    except Exception:
-        top_releases = None
+        pass
     all_devils = get_devils_games(days=14)
     devils = [
         e for e in all_devils

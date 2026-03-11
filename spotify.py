@@ -1,3 +1,4 @@
+import spotipy
 from db import get_connection
 from spotify_auth import get_spotify
 from datetime import datetime, timezone, timedelta
@@ -112,7 +113,6 @@ def get_new_releases():
                 if album["id"] in seen_ids:
                     continue
                 rel_date = album.get("release_date", "")
-                # release_date can be YYYY, YYYY-MM, or YYYY-MM-DD
                 if len(rel_date) < 10:
                     continue
                 if rel_date >= cutoff.isoformat():
@@ -120,11 +120,15 @@ def get_new_releases():
                     releases.append({
                         "artist":    artist["artist_name"],
                         "album":     album["name"],
-                        "type":      album["album_type"],   # album / single / ep
+                        "type":      album["album_type"],
                         "date":      rel_date,
                         "url":       album["external_urls"].get("spotify", ""),
                         "image_url": album["images"][1]["url"] if len(album["images"]) > 1 else "",
                     })
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                break  # rate limited, stop trying
+            continue
         except Exception:
             continue
 
@@ -162,6 +166,10 @@ def get_top_artist_new_releases(exclude_ids=None, limit=10):
                     "url":       album["external_urls"].get("spotify", ""),
                     "image_url": album["images"][1]["url"] if len(album["images"]) > 1 else "",
                 })
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                break
+            continue
         except Exception:
             continue
         if len(releases) >= limit:
