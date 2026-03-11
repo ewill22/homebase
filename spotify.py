@@ -7,6 +7,13 @@ from collections import defaultdict, Counter
 ARTIST_COLORS = ["#f0c014", "#e8a0b0", "#88a8d4", "#7ec89b", "#c89b6a"]
 OTHER_COLOR   = "#3a3a3a"
 
+def _last_friday():
+    """Return the most recent Friday (today if it is Friday)."""
+    from datetime import date
+    today = date.today()
+    days_since = (today.weekday() - 4) % 7  # 0 if today is Friday
+    return today - timedelta(days=days_since)
+
 def get_weekly_listens():
     """Return structured weekly listening data from the DB."""
     conn = get_connection()
@@ -71,11 +78,8 @@ def get_weekly_listens():
 
 
 def get_new_releases():
-    """Return new albums/singles (last 7 days) from artists in listening history."""
-    from datetime import date, timedelta
-    tz       = ZoneInfo("America/New_York")
-    today    = datetime.now(tz).date()
-    cutoff   = today - timedelta(days=7)
+    """Return new albums/singles (since last Friday) from artists in listening history."""
+    cutoff = _last_friday()
 
     # Get top artist IDs from recent listening history (last 60 days)
     conn   = get_connection()
@@ -129,9 +133,8 @@ def get_new_releases():
 
 
 def get_top_artist_new_releases(exclude_ids=None, limit=10):
-    """Return new releases (last 7 days) from Spotify's all-time top artists."""
-    from datetime import date, timedelta
-    cutoff     = (date.today() - timedelta(days=7)).isoformat()
+    """Return new releases (since last Friday) from Spotify's all-time top artists."""
+    cutoff     = _last_friday().isoformat()
     exclude    = exclude_ids or set()
     sp         = get_spotify()
 

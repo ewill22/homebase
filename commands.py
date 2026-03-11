@@ -116,12 +116,12 @@ def cmd_home_summary():
     except Exception:
         monthly = None
     try:
-        new_releases = get_new_releases() if now_local.weekday() == 4 else None  # Friday only
+        new_releases = get_new_releases()
     except Exception:
         new_releases = None
     try:
-        _recent_ids      = {r["url"] for r in new_releases} if new_releases else set()
-        top_releases     = get_top_artist_new_releases(exclude_ids=_recent_ids) if now_local.weekday() == 4 else None
+        _recent_ids  = {r["url"] for r in new_releases} if new_releases else set()
+        top_releases = get_top_artist_new_releases(exclude_ids=_recent_ids)
     except Exception:
         top_releases = None
     all_devils = get_devils_games(days=14)
@@ -173,10 +173,11 @@ def cmd_home_summary():
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             time_str = dt.strftime('%I:%M %p').lstrip('0') if is_timed else "All day"
             color = GCAL_COLORS.get(e.get("colorId", ""), "#d1d1d6")
-            dot = f'<td style="padding:7px 8px 7px 0;vertical-align:middle;width:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{color};"></div></td>'
+            dot = f'<td style="padding:7px 10px;vertical-align:middle;width:8px;"><div style="width:8px;height:8px;border-radius:2px;background:{color};"></div></td>'
             rows += (
-                f'<tr>{dot}'
-                f'<td style="color:#6e6e73;font-size:14px;padding:7px 12px 7px 0;white-space:nowrap;font-weight:500;">{dt.strftime("%a %b %d")}</td>'
+                f'<tr>'
+                f'<td style="color:#6e6e73;font-size:14px;padding:7px 0 7px 0;white-space:nowrap;font-weight:500;">{dt.strftime("%a %b %d")}</td>'
+                f'{dot}'
                 f'<td style="font-size:14px;color:#1d1d1f;padding:7px 0;">{safe(e["summary"])} <span style="color:#aeaeb2;font-size:13px;">{time_str}</span></td>'
                 '</tr>'
             )
@@ -322,7 +323,7 @@ def cmd_home_summary():
             '<div style="margin-bottom:40px;"></div>'
         )
 
-    # — New releases section (Fridays only) —
+    # — New releases section (always shown, refreshes each Friday) —
     def build_release_rows(releases):
         rows = ""
         for r in releases:
