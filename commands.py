@@ -157,18 +157,26 @@ def cmd_home_summary():
         """Format a temperature value with HTML degree entity."""
         return f"{val}&deg;{unit.replace('°', '')}"
 
+    GCAL_COLORS = {
+        "1": "#a4bdfc", "2": "#7ae7bf", "3": "#dbadff", "4": "#ff887c",
+        "5": "#fbd75b", "6": "#ffb878", "7": "#46d6db", "8": "#e1e1e1",
+        "9": "#5484ed", "10": "#51b749", "11": "#dc2127",
+    }
+
     def event_rows(items):
         if not items:
-            return '<tr><td colspan="2" style="color:#aeaeb2;font-size:14px;padding:6px 0;">Nothing on the books.</td></tr>'
+            return '<tr><td colspan="3" style="color:#aeaeb2;font-size:14px;padding:6px 0;">Nothing on the books.</td></tr>'
         rows = ""
         for e in items:
             raw = e["start"].get("dateTime", e["start"].get("date"))
             is_timed = "dateTime" in e["start"]
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             time_str = dt.strftime('%I:%M %p').lstrip('0') if is_timed else "All day"
+            color = GCAL_COLORS.get(e.get("colorId", ""), "#d1d1d6")
+            dot = f'<td style="padding:7px 8px 7px 0;vertical-align:middle;width:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{color};"></div></td>'
             rows += (
-                '<tr>'
-                f'<td style="color:#6e6e73;font-size:14px;padding:7px 20px 7px 0;white-space:nowrap;font-weight:500;">{dt.strftime("%a %b %d")}</td>'
+                f'<tr>{dot}'
+                f'<td style="color:#6e6e73;font-size:14px;padding:7px 12px 7px 0;white-space:nowrap;font-weight:500;">{dt.strftime("%a %b %d")}</td>'
                 f'<td style="font-size:14px;color:#1d1d1f;padding:7px 0;">{safe(e["summary"])} <span style="color:#aeaeb2;font-size:13px;">{time_str}</span></td>'
                 '</tr>'
             )
@@ -268,6 +276,7 @@ def cmd_home_summary():
             )
 
         legend_rows = ""
+        artist_ids  = listening.get("artist_ids", {})
         artists_for_legend = list(listening["top_artists"])
         if any(d["other"] > 0 for d in daily):
             other_total = sum(d["other"] for d in daily)
@@ -277,12 +286,17 @@ def cmd_home_summary():
             color = ARTIST_COLORS[j] if j < len(ARTIST_COLORS) else "#9ca3af"
             is_last = (j == len(artists_for_legend) - 1)
             border = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            aid = artist_ids.get(name)
+            name_html = (
+                f'<a href="https://open.spotify.com/artist/{aid}" style="color:#9ca3af;text-decoration:none;">{safe(name)}</a>'
+                if aid else safe(name)
+            )
             legend_rows += (
                 f'<tr>'
                 f'<td style="padding:8px 16px;{border}width:16px;">'
                 f'<div style="width:10px;height:10px;border-radius:2px;background:{color};"></div>'
                 f'</td>'
-                f'<td style="padding:8px 0;{border}font-size:13px;color:#9ca3af;">{safe(name)}</td>'
+                f'<td style="padding:8px 0;{border}font-size:13px;color:#9ca3af;">{name_html}</td>'
                 f'<td style="padding:8px 16px;{border}text-align:right;font-size:13px;color:#6b7280;font-weight:500;">{count}</td>'
                 f'</tr>'
             )

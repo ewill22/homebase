@@ -12,7 +12,7 @@ def get_weekly_listens():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT played_at, artist_name
+        SELECT played_at, artist_name, artist_id
         FROM spotify_plays
         WHERE played_at >= NOW() - INTERVAL 7 DAY
         ORDER BY played_at
@@ -29,10 +29,12 @@ def get_weekly_listens():
     # Group by (ET date, artist)
     day_artist   = defaultdict(lambda: defaultdict(int))
     artist_total = Counter()
+    artist_ids   = {}
     for row in rows:
-        played_et = row["played_at"].replace(tzinfo=timezone.utc).astimezone(tz)
-        day_artist[played_et.date()][row["artist_name"]] += 1
+        day_artist[row["played_at"].date()][row["artist_name"]] += 1
         artist_total[row["artist_name"]] += 1
+        if row.get("artist_id"):
+            artist_ids[row["artist_name"]] = row["artist_id"]
 
     top_artists = artist_total.most_common(5)
     top_names   = [a[0] for a in top_artists]
@@ -61,6 +63,7 @@ def get_weekly_listens():
     return {
         "total":           len(rows),
         "top_artists":     top_artists,
+        "artist_ids":      artist_ids,
         "daily":           daily,
         "today_extra":     today_extra,
         "weekly_estimate": weekly_estimate,
