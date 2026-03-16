@@ -2,11 +2,21 @@ import requests
 import time
 from db import get_connection
 
-CITIES = [
-    {"name": "Northfield, NJ",     "lat": 39.3676, "lon": -74.5571, "unit": "fahrenheit", "wind_unit": "mph"},
-    {"name": "Fort Lauderdale, FL", "lat": 26.1224, "lon": -80.1373, "unit": "fahrenheit", "wind_unit": "mph"},
-    {"name": "Amsterdam",           "lat": 52.3676, "lon":  4.9041,  "unit": "celsius",    "wind_unit": "kmh"},
-]
+
+def _load_cities(user_id=1):
+    """Load cities from DB for a user, mapped to the format fetch_city() expects."""
+    from config import get_config
+    rows = get_config(user_id)["cities"]
+    return [
+        {
+            "name":      r["name"],
+            "lat":       float(r["lat"]),
+            "lon":       float(r["lon"]),
+            "unit":      r["temp_unit"],
+            "wind_unit": r["wind_unit"],
+        }
+        for r in rows
+    ]
 
 def _condition(code):
     """Map WMO weather code to a simple label."""
@@ -61,9 +71,10 @@ def fetch_city(city):
         "condition": _condition(daily_code),
     }
 
-def fetch_and_store():
-    """Pull current conditions for Northfield NJ and save to DB."""
-    home = fetch_city(CITIES[0])
+def fetch_and_store(user_id=1):
+    """Pull current conditions for the user's first city and save to DB."""
+    cities = _load_cities(user_id)
+    home = fetch_city(cities[0])
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -74,6 +85,6 @@ def fetch_and_store():
     conn.close()
     return home
 
-def fetch_all():
-    """Return current conditions for all cities."""
-    return [fetch_city(c) for c in CITIES]
+def fetch_all(user_id=1):
+    """Return current conditions for all cities for a user."""
+    return [fetch_city(c) for c in _load_cities(user_id)]

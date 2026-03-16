@@ -10,14 +10,17 @@ from gmail import get_imap
 from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
-from spotify import get_weekly_listens, get_monthly_recap, get_new_releases, get_top_artist_new_releases
+from spotify import get_weekly_listens, get_monthly_recap
+from strain_checker import get_strain_stock, DEFAULT_STRAIN
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
 MY_EMAIL = os.getenv("EMAIL_ADDRESS")
-TRUSTED_SENDERS = ["ewill22@gmail.com"]
+
+from config import get_config as _get_config
+TRUSTED_SENDERS = _get_config()["trusted_senders"]
 
 COMMANDS = {
     "how are things at home": "cmd_home_summary",
@@ -25,13 +28,17 @@ COMMANDS = {
     "whats up at home": "cmd_home_summary",
 }
 
-def cmd_home_summary():
-    fetch_and_store()
-    cities = fetch_all()
+def cmd_home_summary(user_id=1):
+    from config import get_config
+    cfg  = get_config(user_id)
+    user = cfg["user"]
+
+    fetch_and_store(user_id)
+    cities = fetch_all(user_id)
     from zoneinfo import ZoneInfo
     from datetime import date, timedelta
     import random
-    tz = ZoneInfo("America/New_York")
+    tz = ZoneInfo(user["timezone"])
     now_local = datetime.now(tz)
     hour = now_local.hour
     today = now_local.date()
@@ -116,27 +123,30 @@ def cmd_home_summary():
     except Exception:
         monthly = None
     import concurrent.futures
-    def _fetch_releases():
-        nr = get_new_releases()
-        ids = {r["url"] for r in nr} if nr else set()
-        tr = get_top_artist_new_releases(exclude_ids=ids)
-        return nr, tr
-
-    new_releases = None
-    top_releases = None
+    strain_hits = None
     try:
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(_fetch_releases)
-            new_releases, top_releases = future.result(timeout=90)
+            future = pool.submit(get_strain_stock)
+            strain_hits = future.result(timeout=60)
     except Exception:
         pass
     all_devils = get_devils_games(days=14)
-    devils = [
+    from datetime import timedelta
+    tomorrow = today + timedelta(days=1)
+    devils_today = [
         e for e in all_devils
         if datetime.fromisoformat(
             e["start"].get("dateTime", e["start"].get("date")).replace("Z", "+00:00")
         ).astimezone(ZoneInfo("America/New_York")).date() == today
     ]
+    devils_tomorrow = [
+        e for e in all_devils
+        if datetime.fromisoformat(
+            e["start"].get("dateTime", e["start"].get("date")).replace("Z", "+00:00")
+        ).astimezone(ZoneInfo("America/New_York")).date() == tomorrow
+    ]
+    devils = devils_today or devils_tomorrow
+    devils_label = "Devils &mdash; Tonight" if devils_today else "Devils &mdash; Tomorrow"
 
     # — HTML version —
     import html as html_lib
@@ -214,7 +224,7 @@ def cmd_home_summary():
     if devils:
         devils_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Devils</p>'
+            f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">{devils_label}</p>'
             f'<table style="width:100%;border-collapse:collapse;">{event_rows(devils)}</table>'
         )
 
@@ -329,60 +339,6 @@ def cmd_home_summary():
             '<div style="margin-bottom:40px;"></div>'
         )
 
-    # — New releases section (always shown, refreshes each Friday) —
-    def build_release_rows(releases):
-        rows = ""
-        for r in releases:
-            type_label = {"single": "Single", "album": "Album", "ep": "EP"}.get(r["type"], r["type"].title())
-            type_color = {"single": "#88a8d4", "album": "#f0c014", "ep": "#e8a0b0"}.get(r["type"], "#9ca3af")
-            is_last    = (r == releases[-1])
-            border     = "" if is_last else "border-bottom:1px solid #1f1f1f;"
-            img_td = (
-                f'<td style="padding:10px 0 10px 14px;{border}vertical-align:middle;width:52px;">'
-                f'<a href="{r["url"]}" style="text-decoration:none;">'
-                f'<img src="{r["image_url"]}" width="44" height="44" style="display:block;border-radius:4px;" alt="" />'
-                f'</a></td>'
-            ) if r["image_url"] else f'<td style="{border}width:14px;"></td>'
-            rows += (
-                f'<tr>{img_td}'
-                f'<td style="padding:10px 12px;{border}vertical-align:middle;">'
-                f'<a href="{r["url"]}" style="text-decoration:none;">'
-                f'<div style="font-size:13px;color:#ffffff;font-weight:500;">{safe(r["album"])}</div>'
-                f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{safe(r["artist"])}</div>'
-                f'</a></td>'
-                f'<td style="padding:10px 14px 10px 0;{border}text-align:right;vertical-align:middle;white-space:nowrap;">'
-                f'<span style="font-size:11px;color:{type_color};font-weight:600;letter-spacing:0.5px;">{type_label}</span>'
-                f'</td></tr>'
-            )
-        return rows
-
-    new_releases_section = ""
-    if new_releases is not None or top_releases is not None:
-        sections_html = '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-        sections_html += '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 32px;">New This Week</p>'
-
-        if new_releases:
-            sections_html += (
-                '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 10px;">From your recent listening</p>'
-                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:28px;">'
-                f'<table style="width:100%;border-collapse:collapse;">{build_release_rows(new_releases)}</table>'
-                f'</div>'
-            )
-        elif new_releases is not None:
-            sections_html += '<p style="font-size:13px;color:#aeaeb2;margin:0 0 28px;">Nothing new from your recent artists this week.</p>'
-
-        if top_releases:
-            sections_html += (
-                '<p style="font-size:12px;font-weight:600;color:#6e6e73;margin:0 0 10px;">From your top artists</p>'
-                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
-                f'<table style="width:100%;border-collapse:collapse;">{build_release_rows(top_releases)}</table>'
-                f'</div>'
-            )
-        elif top_releases is not None:
-            sections_html += '<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">Nothing new from your top artists this week.</p>'
-
-        new_releases_section = sections_html
-
     # — Monthly recap section (only on the 1st) —
     monthly_section = ""
     if monthly and monthly["month_total"] > 0:
@@ -434,9 +390,46 @@ def cmd_home_summary():
             f'</div>'
         )
 
+    # — Strain section —
+    import urllib.parse
+    strain_section = ""
+    if strain_hits is not None:
+        if strain_hits:
+            hit_rows = ""
+            for m in strain_hits:
+                price_str  = f'<span style="color:#6b7280;font-size:12px;margin-left:6px;">{safe(m["price"])}</span>' if m.get("price") else ""
+                maps_url       = "https://maps.google.com/?q=" + urllib.parse.quote(m["dispensary"] + " NJ")
+                new_batch_badge = '<span style="font-size:10px;font-weight:600;color:#f0c014;letter-spacing:0.5px;background:#1f1f1f;padding:2px 6px;border-radius:3px;margin-left:8px;">new batch</span>' if m.get("new_batch") else ""
+                hit_rows += (
+                    f'<tr>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid #1f1f1f;font-size:13px;font-weight:500;">'
+                    f'<a href="{m["url"]}" style="color:#7ec89b;text-decoration:none;">{safe(m["dispensary"])}</a>'
+                    f'<a href="{maps_url}" style="color:#6b7280;font-size:10px;font-weight:600;letter-spacing:0.5px;text-decoration:none;margin-left:8px;background:#1f1f1f;padding:2px 6px;border-radius:3px;">nav</a>'
+                    f'{new_batch_badge}'
+                    f'</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid #1f1f1f;font-size:13px;color:#9ca3af;">'
+                    f'{safe(m["name"])}{price_str}'
+                    f'</td>'
+                    f'</tr>'
+                )
+            strain_section = (
+                '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+                f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">In Stock</p>'
+                f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{safe(DEFAULT_STRAIN.title())} spotted today</p>'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+                f'<table style="width:100%;border-collapse:collapse;">{hit_rows}</table>'
+                f'</div>'
+            )
+        else:
+            strain_section = (
+                '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+                f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">In Stock</p>'
+                f'<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">{safe(DEFAULT_STRAIN.title())} &mdash; not in stock today.</p>'
+            )
+
     from datetime import date as date_type
-    birthday = date_type(1991, 5, 11)
-    day_of_life = (today - birthday).days + 1
+    birthday    = date_type.fromisoformat(str(user["birthday"])) if user.get("birthday") else None
+    day_of_life = (today - birthday).days + 1 if birthday else None
 
     # — Calendar section: dynamic header based on day of week —
     weekday = today.weekday()  # 0=Mon, 6=Sun
@@ -460,8 +453,9 @@ def cmd_home_summary():
         if all_events:
             calendar_section += cal_hr + cal_label.format("Next week") + cal_table.format(event_rows(all_events))
 
-    LOGO_URL = "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
-    date_str = datetime.now(ZoneInfo("America/New_York")).strftime('%A, %B %d')
+    LOGO_URL = user.get("logo_url") or "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
+    date_str    = datetime.now(ZoneInfo(user["timezone"])).strftime('%A, %B %d')
+    day_ol_line = f'<p style="font-size:12px;color:#aeaeb2;margin:0 0 40px;">Day {day_of_life:,} of your life</p>' if day_of_life else ''
     html = (
         '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Helvetica Neue\',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;">'
         # — Guapa nav strip —
@@ -481,13 +475,13 @@ def cmd_home_summary():
         '<div style="background:#ffffff;padding:36px 28px 48px;">'
         f'<p style="font-size:24px;font-weight:600;color:#1d1d1f;margin:0 0 4px;letter-spacing:-0.3px;">{safe(greeting)}</p>'
         f'<p style="font-size:15px;color:#6e6e73;margin:0 0 6px;">{date_str}</p>'
-        f'<p style="font-size:12px;color:#aeaeb2;margin:0 0 40px;">Day {day_of_life:,} of your life</p>'
+        f'{day_ol_line}'
         '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Weather</p>'
         f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{city_rows}</table>'
         + calendar_section
         + f'{devils_section}'
         + listening_section
-        + new_releases_section
+        + strain_section
         + monthly_section
         + '</div>'   # end white content
         + '</div>'   # end outer wrapper
@@ -524,15 +518,19 @@ def cmd_home_summary():
         if all_events:
             plain += f"NEXT WEEK\n{plain_rows(all_events)}\n"
     if devils:
-        plain += f"DEVILS\n{plain_rows(devils)}\n"
+        plain += f"{'DEVILS — TONIGHT' if devils_today else 'DEVILS — TOMORROW'}\n{plain_rows(devils)}\n"
     if listening and listening["total"] > 0:
         plain += f"LISTENING ({listening['total']} plays this week)\n"
         for artist, count in listening["top_artists"]:
             plain += f"  {count}x  {artist}\n"
-    if new_releases:
-        plain += "\nNEW THIS WEEK\n"
-        for r in new_releases:
-            plain += f"  {r['artist']} — {r['album']} ({r['type'].title()})\n  {r['url']}\n"
+    if strain_hits is not None:
+        plain += f"\nIN STOCK — {DEFAULT_STRAIN.title()}\n"
+        if strain_hits:
+            for m in strain_hits:
+                price = f"  {m['price']}" if m.get("price") else ""
+                plain += f"  {m['dispensary']}{price}\n  {m['url']}\n"
+        else:
+            plain += "  Not in stock today.\n"
     if monthly and monthly["month_total"] > 0:
         plain += f"\nMONTHLY RECAP — {monthly['month_name']}\n"
         plain += f"  {monthly['month_total']} plays · {monthly['ytd_total']} YTD\n"
@@ -583,6 +581,7 @@ def check_and_respond():
                 response = globals()[func_name]()
                 from datetime import datetime
                 from zoneinfo import ZoneInfo
+                from logger import log_event
                 now = datetime.now(ZoneInfo("America/New_York"))
                 subject = "homebase | " + now.strftime("%a %b %d, %I:%M %p")
                 send_email(
@@ -590,6 +589,7 @@ def check_and_respond():
                     body=response,
                     to=reply_to
                 )
+                log_event("command", message=f"{func_name} → {reply_to}", detail=trigger)
                 matched = True
                 break
 

@@ -1,0 +1,115 @@
+/* ========================================
+   GUAPA BASE — Design Tokens & Reset
+   Copy this file into any Guapa project.
+   Source of truth: guapa-site/public/guapa-base.css
+======================================== */
+
+:root {
+    --black: #0a0a0a;
+    --dark: #111111;
+    --gray-900: #141414;
+    --gray-800: #1f1f1f;
+    --gray-600: #6b7280;
+    --gray-400: #9ca3af;
+    --gray-200: #e5e5e5;
+    --white: #ffffff;
+
+    --yellow: #f0c014;
+    --yellow-hover: #d4a912;
+    --pink: #e8a0b0;
+    --pink-hover: #d88a9a;
+    --pink-muted: #c4848f;
+    --blue: #88a8d4;
+    --green: #7ec89b;
+    --amber: #c89b6a;
+
+    --font-main: 'Instrument Sans', -apple-system, sans-serif;
+    --font-serif: 'Newsreader', Georgia, serif;
+
+    --space-xs: 0.5rem;
+    --space-sm: 1rem;
+    --space-md: 1.5rem;
+    --space-lg: 3rem;
+    --space-xl: 5rem;
+    --space-2xl: 8rem;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+
+    --transition: 0.2s ease;
+}
+
+/* Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-main);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--white);
+    background-color: var(--black);
+    -webkit-font-smoothing: antialiased;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Container */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 var(--space-md);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--black);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--gray-800);
+    border-radius: 3px;
+}
+
+/* Selection */
+::selection {
+    background: var(--yellow);
+    color: var(--black);
+}
+
+/* Focus */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+    outline: 2px solid var(--yellow);
+    outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

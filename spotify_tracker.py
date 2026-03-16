@@ -6,10 +6,13 @@ from spotify_auth import get_spotify
 from db import get_connection
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from config import get_config
+from logger import log_event
 
-ET = ZoneInfo("America/New_York")
+def sync_recent_plays(user_id=1):
+    cfg = get_config(user_id)
+    tz  = ZoneInfo(cfg["user"]["timezone"])
 
-def sync_recent_plays():
     sp = get_spotify()
     conn = get_connection()
     cursor = conn.cursor()
@@ -26,20 +29,20 @@ def sync_recent_plays():
 
         played_at = datetime.fromisoformat(
             item["played_at"].replace("Z", "+00:00")
-        ).astimezone(ET).replace(tzinfo=None)  # store as ET naive
+        ).astimezone(tz).replace(tzinfo=None)  # store as user-tz naive
 
         primary_artist  = artists[0] if artists else {}
         extra_artists   = ", ".join(a["name"] for a in artists[1:]) or None
 
         cursor.execute("""
             INSERT IGNORE INTO spotify_plays (
-                played_at, track_id, track_name, duration_ms, explicit,
+                played_at, user_id, track_id, track_name, duration_ms, explicit,
                 popularity, track_number, disc_number, track_uri,
                 artist_id, artist_name, extra_artists,
                 album_id, album_name, album_type, album_release, album_tracks, album_uri,
                 context_type, context_uri
             ) VALUES (
-                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
@@ -47,6 +50,7 @@ def sync_recent_plays():
             )
         """, (
             played_at,
+            user_id,
             track.get("id"),
             track.get("name"),
             track.get("duration_ms"),
@@ -75,7 +79,9 @@ def sync_recent_plays():
     conn.close()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{now}] synced — {new_count} new plays, {len(items) - new_count} already stored")
+    msg = f"{new_count} new plays, {len(items) - new_count} already stored"
+    print(f"[{now}] synced — {msg}")
+    log_event("spotify_sync", message=msg, user_id=user_id)
 
 if __name__ == "__main__":
     sync_recent_plays()

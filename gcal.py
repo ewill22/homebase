@@ -3,19 +3,22 @@ from googleapiclient.discovery import build
 from datetime import datetime, timezone, timedelta
 
 DEVILS_CAL_ID = "nhl_-m-0hm2b_%4eew+%4aersey+%44evils#sports@group.v.calendar.google.com"
-CALENDAR_IDS  = ["primary", "ewill22@gmail.com"]
+
 
 def get_service():
     return build("calendar", "v3", credentials=get_calendar_creds())
 
-def get_upcoming_events(days=7, max_results=10):
+def get_upcoming_events(days=7, max_results=10, user_id=1):
     """Return upcoming events within the next N days across all personal calendars."""
+    from config import get_config
+    calendar_ids = get_config(user_id)["personal_cal_ids"]
+
     service = get_service()
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days)
 
     all_events = []
-    for cal_id in CALENDAR_IDS:
+    for cal_id in calendar_ids:
         result = service.events().list(
             calendarId=cal_id,
             timeMin=now.isoformat(),
