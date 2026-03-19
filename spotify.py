@@ -5,7 +5,8 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict, Counter
 
-ARTIST_COLORS = ["#f0c014", "#e8a0b0", "#88a8d4", "#7ec89b", "#c89b6a"]
+ARTIST_COLORS = ["#f0c014", "#e8a0b0", "#88a8d4", "#7ec89b", "#c89b6a",
+                 "#d97af2", "#f28c5e", "#5ec8c8", "#a8c84a", "#f25e7a"]
 OTHER_COLOR   = "#3a3a3a"
 
 def _last_friday():
@@ -23,6 +24,7 @@ def get_weekly_listens():
         SELECT played_at, artist_name, artist_id
         FROM spotify_plays
         WHERE played_at >= NOW() - INTERVAL 7 DAY
+          AND HOUR(played_at) BETWEEN 5 AND 22
         ORDER BY played_at
     """)
     rows = cursor.fetchall()
@@ -44,7 +46,7 @@ def get_weekly_listens():
         if row.get("artist_id"):
             artist_ids[row["artist_name"]] = row["artist_id"]
 
-    top_artists = artist_total.most_common(5)
+    top_artists = artist_total.most_common(10)
     top_names   = [a[0] for a in top_artists]
 
     daily = []
@@ -90,6 +92,7 @@ def get_new_releases():
         FROM spotify_plays
         WHERE played_at >= NOW() - INTERVAL 60 DAY
           AND artist_id IS NOT NULL
+          AND HOUR(played_at) BETWEEN 5 AND 22
         GROUP BY artist_id, artist_name
         ORDER BY plays DESC
         LIMIT 30
@@ -202,6 +205,7 @@ def get_monthly_recap():
                COUNT(*) AS plays
         FROM spotify_plays
         WHERE played_at >= %s AND played_at < %s
+          AND HOUR(played_at) BETWEEN 5 AND 22
         GROUP BY artist_name, track_name
         ORDER BY plays DESC
     """, (last_month_start, first_of_this_month))
@@ -212,6 +216,7 @@ def get_monthly_recap():
         SELECT artist_name, COUNT(*) AS plays
         FROM spotify_plays
         WHERE played_at >= %s AND played_at < %s
+          AND HOUR(played_at) BETWEEN 5 AND 22
         GROUP BY artist_name
         ORDER BY plays DESC
     """, (ytd_start, first_of_this_month))
