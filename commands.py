@@ -469,7 +469,14 @@ def cmd_home_summary(user_id=1):
             calendar_section += cal_hr + cal_label.format("Weekend") + cal_table.format(event_rows(weekend_events))
     elif weekday <= 5:  # Thu–Sat
         if workday_events and weekday <= 4:
-            calendar_section += cal_hr + cal_label.format("What's up next this week") + cal_table.format(event_rows(workday_events))
+            this_friday = today + timedelta(days=4 - weekday)
+            this_week_events = [
+                e for e in workday_events
+                if datetime.fromisoformat(
+                    e["start"].get("dateTime", e["start"].get("date")).replace("Z", "+00:00")
+                ).astimezone(tz).date() <= this_friday
+            ]
+            calendar_section += cal_hr + cal_label.format("What's up next this week") + cal_table.format(event_rows(this_week_events))
         if weekend_events:
             calendar_section += cal_hr + cal_label.format("What's going on this weekend") + cal_table.format(event_rows(weekend_events))
     else:  # Sun
@@ -535,7 +542,14 @@ def cmd_home_summary(user_id=1):
             plain += f"WEEKEND\n{plain_rows(weekend_events)}\n"
     elif weekday <= 5:
         if workday_events and weekday <= 4:
-            plain += f"WHAT'S UP NEXT THIS WEEK\n{plain_rows(workday_events)}\n"
+            this_friday = today + timedelta(days=4 - weekday)
+            this_week_plain = [
+                e for e in workday_events
+                if datetime.fromisoformat(
+                    e["start"].get("dateTime", e["start"].get("date")).replace("Z", "+00:00")
+                ).astimezone(tz).date() <= this_friday
+            ]
+            plain += f"WHAT'S UP NEXT THIS WEEK\n{plain_rows(this_week_plain)}\n"
         if weekend_events:
             plain += f"WHAT'S GOING ON THIS WEEKEND\n{plain_rows(weekend_events)}\n"
     else:
