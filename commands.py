@@ -12,6 +12,7 @@ from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
 from spotify import get_weekly_listens, get_monthly_recap
 from strain_checker import get_strain_stock, DEFAULT_STRAIN
+from steps import get_steps_today, GOAL as STEPS_GOAL
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -114,6 +115,10 @@ def cmd_home_summary(user_id=1):
     # 40% chance of a fortune, otherwise small talk
     greeting = random.choice(fortunes if random.random() < 0.4 else small_talk)
     today = datetime.now(ZoneInfo("America/New_York")).date()
+    try:
+        steps_today = get_steps_today()
+    except Exception:
+        steps_today = None
     try:
         listening = get_weekly_listens()
     except Exception:
@@ -390,6 +395,25 @@ def cmd_home_summary(user_id=1):
             f'</div>'
         )
 
+    # — Steps section —
+    steps_section = ""
+    if steps_today is not None:
+        pct         = min(100, round(steps_today / STEPS_GOAL * 100))
+        remaining   = max(0, STEPS_GOAL - steps_today)
+        goal_color  = "#7ec89b"
+        if remaining == 0:
+            sub = f'{steps_today:,} steps &middot; Goal reached &#10003;'
+        else:
+            sub = f'{steps_today:,} steps today &middot; {remaining:,} to go'
+        steps_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Steps</p>'
+            f'<p style="font-size:13px;color:#6e6e73;margin:0 0 12px;">{sub}</p>'
+            f'<div style="background:#f2f2f7;border-radius:4px;height:8px;margin-bottom:40px;">'
+            f'<div style="background:{goal_color};border-radius:4px;height:8px;width:{pct}%;"></div>'
+            f'</div>'
+        )
+
     # — Strain section —
     import urllib.parse
     strain_section = ""
@@ -481,6 +505,7 @@ def cmd_home_summary(user_id=1):
         + calendar_section
         + f'{devils_section}'
         + listening_section
+        + steps_section
         + strain_section
         + monthly_section
         + '</div>'   # end white content
@@ -523,6 +548,10 @@ def cmd_home_summary(user_id=1):
         plain += f"LISTENING ({listening['total']} plays this week)\n"
         for artist, count in listening["top_artists"]:
             plain += f"  {count}x  {artist}\n"
+    if steps_today is not None:
+        remaining = max(0, STEPS_GOAL - steps_today)
+        goal_str = "Goal reached!" if remaining == 0 else f"{remaining:,} to go"
+        plain += f"\nSTEPS\n  {steps_today:,} today  ({goal_str})\n"
     if strain_hits is not None:
         plain += f"\nIN STOCK — {DEFAULT_STRAIN.title()}\n"
         if strain_hits:
