@@ -1,6 +1,6 @@
 # Homebase
 
-A personal command center — weather, calendar, music, and dispensary stock delivered daily by email, with an on-demand command interface via Gmail.
+A personal command center — weather, steps, calendar, music, and dispensary stock delivered daily by email.
 
 Built with Python + MySQL + Gmail. Part of the Guapa Inc ecosystem: homebase is a consumer of data products built in `guapa-data/`.
 
@@ -11,10 +11,10 @@ Built with Python + MySQL + Gmail. Part of the Guapa Inc ecosystem: homebase is 
 ```
 guapa-data/strains/     ← collects dispensary stock data → guapa.strain_stock
 guapa-data/music/       ← music pipeline (planned)       → guapa DB
-homebase/               ← reads all of the above, sends email, listens for commands
+homebase/               ← reads all of the above, sends email
 ```
 
-Homebase never scrapes or collects raw data directly (except weather and Spotify plays). It assembles data from its own DB and from guapa, formats it, and delivers it.
+Homebase never scrapes or collects raw data directly (except weather, Spotify plays, and steps). It assembles data from its own DB and from guapa, formats it, and delivers it.
 
 ---
 
@@ -48,12 +48,15 @@ Homebase never scrapes or collects raw data directly (except weather and Spotify
 
 ## Scheduled Tasks (Windows Task Scheduler)
 
-| Task | Schedule | Script |
-|---|---|---|
-| Homebase Summary | Daily 7:00 AM | `send_summary.py` |
-| Homebase Commands | Every 5 min | `commands.py` |
-| Homebase Spotify Tracker | Every 5 min | `spotify_tracker.py` |
-| Guapa Strains Sync | Daily 6:30 AM | `guapa-data/strains/sync.py` |
+| Task | Schedule | Script | Status |
+|---|---|---|---|
+| Guapa Strains Sync | Daily 6:30 AM | `guapa-data/strains/sync.py` | Active |
+| Homebase Steps Sync | Daily 6:50 AM | `health_steps.py --sync` | Active |
+| Homebase Morning Summary | Daily 7:00 AM | `send_summary.py` | Active |
+| Homebase Spotify Tracker | Every 5 min | `spotify_tracker.py` | Active |
+| Homebase Commands | Every 5 min | `commands.py` | **Disabled** |
+
+All tasks use the full path to `python.exe` (`C:\Users\eewil\AppData\Local\Programs\Python\Python314\python.exe`) since Task Scheduler doesn't inherit PATH.
 
 ---
 
@@ -66,6 +69,13 @@ Sections (in order):
 
 ### Greeting
 Random small talk or fortune cookie (40% chance), time-of-day aware.
+
+### Steps
+Yesterday's step count vs an adjusted daily target.
+- Target recalculates daily to hit a **7,500 steps/day monthly average** based on MTD actuals
+- Progress bar: green if yesterday hit the target, blue if under
+- Data sourced from `~/.health_steps_cache.json` (written by `health_steps.py --sync`)
+- Section hidden if no data available
 
 ### Weather
 Three cities side by side — Northfield NJ, Fort Lauderdale FL, Amsterdam NL.
@@ -80,7 +90,7 @@ Pulled from Google Calendar via OAuth2. Reads:
 
 Dynamic header based on day of week:
 - Mon–Wed: "What's up next this week" + "Weekend"
-- Thu–Fri: "What's up next this week" + "What's going on this weekend"
+- Thu–Fri: "What's up next this week" (events capped at that Friday) + "What's going on this weekend"
 - Sat: "What's going on this weekend"
 - Sun: "Next week"
 
@@ -92,9 +102,10 @@ Events show Google Calendar color as a square dot.
 Shown if there's a Devils game today ("Devils — Tonight") or tomorrow ("Devils — Tomorrow"). Hidden entirely otherwise.
 
 ### Spotify Listening
-Stacked bar chart — last 7 days of listening, grouped by artist.
+Stacked bar chart — last 7 days of listening, grouped by top 10 artists.
 Guapa dark panel (`#111111`), legend with artist name (clickable Spotify link) and play count.
-Bar colors: yellow, pink, blue, green, amber (`ARTIST_COLORS` in `spotify.py`).
+Play counts filter to **5 AM – 11 PM only** (excludes late night/early morning noise).
+Bar colors defined in `ARTIST_COLORS` in `spotify.py` (10 colors).
 
 ### Strain Stock
 Dispensaries currently carrying Crops "Secret Meetings" near Atlantic City.
@@ -107,13 +118,26 @@ Top artists + tracks for the prior month, YTD play counts, horizontal bar charts
 
 ---
 
+## Step Tracking (`health_steps.py` + `steps.py`)
+
+iPhone Shortcut writes daily step count to iCloud Drive at 11:59 PM:
+```
+iPhone Shortcut (11:59 PM) → iCloudDrive/steps_today.txt → Steps Sync task (6:50 AM) → cache → Morning Email (7:00 AM)
+```
+
+- `steps_today.txt` format: `{"date":"YYYY-MM-DD","steps":1234}`
+- Cache stored at `~/.health_steps_cache.json`
+- `health_steps.py` — full CLI: `--sync`, `--import-xml`, `--days N`, `--summary`, `--setup`
+- `steps.py` — thin reader for the email: `get_steps_yesterday()`, `get_daily_target()`
+- Backfill from Apple Health export: `python health_steps.py --import-xml path/to/export.xml`
+
+---
+
 ## Email Commands (`commands.py`)
 
-Runs every 5 minutes via Task Scheduler. Checks inbox for unread emails from trusted senders, acts on the subject line (falls back to body), deletes the email after processing.
+**Currently disabled** — the Task Scheduler job is turned off. Can be re-enabled via Task Scheduler if needed.
 
-**Trusted senders:** configured in DB (`users.trusted_senders`), defaults to `ewill22@gmail.com` and `eewilliamsremote@gmail.com`.
-
-Subject decoding handles smart quotes from phone autocorrect (unicodedata NFKD normalization).
+When active: runs every 5 minutes, checks inbox for unread emails from trusted senders, acts on the subject line (falls back to body), deletes the email after processing.
 
 | Trigger phrase | Response |
 |---|---|
@@ -129,12 +153,14 @@ Polls Spotify every 5 minutes for recently played tracks.
 Upserts into `homebase.spotify_plays` — unique on `(played_at, track_id)`.
 `played_at` stored as ET naive datetime.
 
+All play count queries filter to **hours 5–22** (`HOUR(played_at) BETWEEN 5 AND 22`) to exclude late night/early morning plays from stats.
+
 Auth via `spotify_auth.py` — SpotifyOAuth with scopes:
 - `user-read-recently-played`
 - `user-top-read`
 
 Query helpers in `spotify.py`:
-- `get_weekly_listens()` — 7-day play counts by artist
+- `get_weekly_listens()` — 7-day play counts by artist (top 10)
 - `get_monthly_recap()` — top artists/tracks + YTD counts for the prior month
 - `get_new_releases()` / `get_top_artist_new_releases()` — parked, will be replaced by guapa-data music product
 
@@ -166,8 +192,6 @@ Thin reader only. All data collection happens in `guapa-data/strains/`.
 - `get_strain_stock(strain="secret meetings")` — queries `guapa.strain_stock` for the latest snapshot
 - Returns: `dispensary, name, brand, category, price, url, listed_at, package_id, strain_type, crops_grower, new_batch`
 
-For scraper details, dispensary list, API notes, and full schema — see `guapa-data/strains/`.
-
 ---
 
 ## File Structure
@@ -187,7 +211,9 @@ homebase/
 ├── spotify_tracker.py    # Poll + store recently played tracks (every 5 min)
 ├── spotify.py            # Query helpers for weekly/monthly listening data
 ├── strain_checker.py     # Thin reader → guapa.strain_stock
-├── commands.py           # Email command listener + home summary builder
+├── health_steps.py       # Apple Health step CLI (sync, import-xml, history views)
+├── steps.py              # Thin reader for morning email (yesterday + daily target)
+├── commands.py           # Email command listener + home summary builder (task disabled)
 ├── send_summary.py       # Morning email entry point (daily 7 AM)
 └── work/                 # Business/analytics files (leads_simple.sql etc.)
 ```
