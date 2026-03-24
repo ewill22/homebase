@@ -22,9 +22,39 @@ def _load_cache():
 
 
 def get_steps_yesterday():
-    """Return yesterday's step count from cache, or None."""
-    cache = _load_cache()
-    return cache.get(str(date.today() - timedelta(days=1)))
+    """
+    Return yesterday's step count.
+    Tries the iCloud file first (in case it synced overnight but the cache task missed it),
+    then falls back to cache.
+    """
+    import glob
+    yesterday = str(date.today() - timedelta(days=1))
+
+    # Try iCloud file directly
+    icloud_dir = os.path.expanduser("~/iCloudDrive")
+    candidates = sorted(
+        glob.glob(os.path.join(icloud_dir, "steps_today*.txt")),
+        key=os.path.getmtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            if data.get("date") == yesterday:
+                steps = int(float(str(data["steps"]).replace(",", "")))
+                if 0 <= steps < 100_000:
+                    # Update cache while we're here
+                    cache = _load_cache()
+                    cache[yesterday] = steps
+                    with open(CACHE_PATH, "w") as cf:
+                        json.dump(cache, cf, indent=2)
+                    return steps
+        except Exception:
+            continue
+
+    # Fall back to cache
+    return _load_cache().get(yesterday)
 
 
 def get_daily_target():
