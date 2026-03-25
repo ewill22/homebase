@@ -1,14 +1,16 @@
 """
-steps.py — Step data from the health_steps cache for the morning email.
-Cache is written by health_steps.py --sync (runs at 6:50 AM via Task Scheduler).
+steps.py — Step data for the morning email.
+iPhone Shortcut writes steps_today.txt to iCloud Drive manually each night.
+Subject format: {"date":"YYYY-MM-DD","steps":NNNN}
 """
 import json
+import glob
 import os
 from calendar import monthrange
 from datetime import date, timedelta
 
 CACHE_PATH   = os.path.expanduser("~/.health_steps_cache.json")
-MONTHLY_GOAL = 7_500   # target average steps/day for the month
+MONTHLY_GOAL = 7_500
 
 
 def _load_cache():
@@ -21,17 +23,19 @@ def _load_cache():
         return {}
 
 
+def _save_cache(cache):
+    with open(CACHE_PATH, "w") as f:
+        json.dump(cache, f, indent=2)
+
+
 def get_steps_yesterday():
     """
     Return yesterday's step count.
-    Tries the iCloud file first (in case it synced overnight but the cache task missed it),
-    then falls back to cache.
+    Tries iCloud file first, falls back to cache.
     """
-    import glob
     yesterday = str(date.today() - timedelta(days=1))
-
-    # Try iCloud file directly
     icloud_dir = os.path.expanduser("~/iCloudDrive")
+
     candidates = sorted(
         glob.glob(os.path.join(icloud_dir, "steps_today*.txt")),
         key=os.path.getmtime,
@@ -44,32 +48,27 @@ def get_steps_yesterday():
             if data.get("date") == yesterday:
                 steps = int(float(str(data["steps"]).replace(",", "")))
                 if 0 <= steps < 100_000:
-                    # Update cache while we're here
                     cache = _load_cache()
                     cache[yesterday] = steps
-                    with open(CACHE_PATH, "w") as cf:
-                        json.dump(cache, cf, indent=2)
+                    _save_cache(cache)
                     return steps
         except Exception:
             continue
 
-    # Fall back to cache
     return _load_cache().get(yesterday)
 
 
 def get_daily_target():
     """
     Adjusted daily target to hit MONTHLY_GOAL average by end of month.
-    Takes into account steps already logged this month so far.
-    Returns an int.
     """
-    today          = date.today()
-    days_in_month  = monthrange(today.year, today.month)[1]
-    month_total    = MONTHLY_GOAL * days_in_month
+    today         = date.today()
+    days_in_month = monthrange(today.year, today.month)[1]
+    month_total   = MONTHLY_GOAL * days_in_month
 
-    cache          = _load_cache()
-    prefix         = f"{today.year}-{today.month:02d}-"
-    steps_so_far   = sum(
+    cache        = _load_cache()
+    prefix       = f"{today.year}-{today.month:02d}-"
+    steps_so_far = sum(
         v for k, v in cache.items()
         if k.startswith(prefix) and k < str(today)
     )
