@@ -461,17 +461,18 @@ def cmd_home_summary(user_id=1):
     if music_summary:
         cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b"}
 
-        def cov_row(label, cov, is_last=False):
+        def cov_row(label, cov, added=0, is_last=False):
             if not cov:
                 return ""
-            color  = cov_colors.get(label, "#f0c014")
-            border = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            color      = cov_colors.get(label, "#f0c014")
+            border     = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            delta_html = f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{added} today</span>' if added else ""
             return (
                 f'<tr><td style="padding:10px 16px;{border}">'
                 f'<table style="width:100%;border-collapse:collapse;"><tr>'
                 f'<td style="font-size:13px;color:#9ca3af;">{label}</td>'
                 f'<td style="text-align:right;font-size:13px;color:#9ca3af;font-weight:500;white-space:nowrap;">'
-                f'{cov["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{cov["have"]:,}/{cov["total"]:,}</span>'
+                f'{cov["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{cov["have"]:,}/{cov["total"]:,}{delta_html}</span>'
                 f'</td></tr></table>'
                 f'<div style="background:#1f1f1f;border-radius:3px;height:6px;margin-top:6px;">'
                 f'<div style="background:{color};border-radius:3px;height:6px;width:{cov["pct"]}%;"></div>'
@@ -480,9 +481,9 @@ def cmd_home_summary(user_id=1):
             )
 
         cov_rows = (
-            cov_row("Spotify",   music_summary.get("spotify"))
-            + cov_row("Wikipedia", music_summary.get("wikipedia"))
-            + cov_row("Cover art", music_summary.get("cover_art"), is_last=True)
+            cov_row("Spotify",   music_summary.get("spotify"),   music_summary.get("spotify_added",    0))
+            + cov_row("Wikipedia", music_summary.get("wikipedia"), music_summary.get("wikipedia_added",  0))
+            + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), is_last=True)
         )
 
         changes = []
