@@ -40,6 +40,28 @@ def get_music_summary():
             "delta": int(m.group(4)) if m.group(4) else 0,
         }
 
+    # Parse per-artist activity from the daily log
+    artists = []
+    log_path = os.path.join(REPORTS_DIR, f"daily-{today}.log")
+    if os.path.isfile(log_path):
+        try:
+            with open(log_path, encoding="utf-8", errors="replace") as f:
+                log_text = f.read()
+            # Lines like: "  Sam Cooke: +4/11 spotify, 7 marked no-match"
+            # or:          "  Beastie Boys: +1/1 spotify"
+            for m in re.finditer(
+                r"^\s+(.+?):\s+\+(\d+)/(\d+) spotify(?:,\s+(\d+) marked no-match)?",
+                log_text, re.MULTILINE
+            ):
+                artists.append({
+                    "name":     m.group(1).strip(),
+                    "added":    int(m.group(2)),
+                    "total":    int(m.group(3)),
+                    "no_match": int(m.group(4)) if m.group(4) else 0,
+                })
+        except Exception:
+            pass
+
     return {
         "date":                  today,
         "total_changes":         find_int(r"Total changes:\s+(\d+)"),
@@ -55,4 +77,5 @@ def get_music_summary():
         "spotify":               find_coverage("Spotify URLs"),
         "wikipedia":             find_coverage("Wikipedia URLs"),
         "cover_art":             find_coverage("Cover art"),
+        "artists":               artists,
     }

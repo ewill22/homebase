@@ -11,7 +11,7 @@ from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
 from spotify import get_weekly_listens, get_monthly_recap
-from strain_checker import get_strain_stock, DEFAULT_STRAIN
+from strain_checker import get_all_strain_hits, TRACKED_STRAINS
 from steps import get_steps_yesterday, get_daily_target, MONTHLY_GOAL as STEPS_MONTHLY_GOAL
 from guapa_music import get_music_summary
 from datetime import datetime, timezone
@@ -136,10 +136,11 @@ def cmd_home_summary(user_id=1):
         monthly = None
     import concurrent.futures
     strain_hits = None
+    tracked_found = []
     try:
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(get_strain_stock)
-            strain_hits = future.result(timeout=60)
+            future = pool.submit(get_all_strain_hits)
+            strain_hits, tracked_found = future.result(timeout=60)
     except Exception:
         pass
     all_devils = get_devils_games(days=14)
@@ -429,31 +430,36 @@ def cmd_home_summary(user_id=1):
                 price_str  = f'<span style="color:#6b7280;font-size:12px;margin-left:6px;">{safe(m["price"])}</span>' if m.get("price") else ""
                 maps_url       = "https://maps.google.com/?q=" + urllib.parse.quote(m["dispensary"] + " NJ")
                 new_batch_badge = '<span style="font-size:10px;font-weight:600;color:#f0c014;letter-spacing:0.5px;background:#1f1f1f;padding:2px 6px;border-radius:3px;margin-left:8px;">new batch</span>' if m.get("new_batch") else ""
+                strain_label = f'<div style="font-size:11px;color:#6b7280;margin-bottom:2px;">{safe(m["strain_name"].title())}</div>'
+                listed_today = m.get("listed_at") and hasattr(m["listed_at"], "date") and m["listed_at"].date() >= (today - timedelta(days=1))
+                new_border = "border-left:3px solid #f0c014;" if listed_today else "border-left:3px solid transparent;"
                 hit_rows += (
                     f'<tr>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid #1f1f1f;font-size:13px;font-weight:500;">'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid #1f1f1f;font-size:13px;font-weight:500;{new_border}">'
                     f'<a href="{m["url"]}" style="color:#7ec89b;text-decoration:none;">{safe(m["dispensary"])}</a>'
                     f'<a href="{maps_url}" style="color:#6b7280;font-size:10px;font-weight:600;letter-spacing:0.5px;text-decoration:none;margin-left:8px;background:#1f1f1f;padding:2px 6px;border-radius:3px;">nav</a>'
                     f'{new_batch_badge}'
                     f'</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid #1f1f1f;font-size:13px;color:#9ca3af;">'
-                    f'{safe(m["name"])}{price_str}'
+                    f'{strain_label}{safe(m["name"])}{price_str}'
                     f'</td>'
                     f'</tr>'
                 )
+            found_names = ", ".join(s.title() for s in tracked_found) if tracked_found else "Crops"
             strain_section = (
                 '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
                 f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">In Stock</p>'
-                f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{safe(DEFAULT_STRAIN.title())} spotted today</p>'
+                f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{safe(found_names)} spotted today</p>'
                 f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
                 f'<table style="width:100%;border-collapse:collapse;">{hit_rows}</table>'
                 f'</div>'
             )
         else:
+            tracked_str = ", ".join(s.title() for s in TRACKED_STRAINS)
             strain_section = (
                 '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
                 f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">In Stock</p>'
-                f'<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">{safe(DEFAULT_STRAIN.title())} &mdash; not in stock today.</p>'
+                f'<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">{safe(tracked_str)} &mdash; not in stock today.</p>'
             )
 
     # — Guapa Music section —
@@ -490,13 +496,37 @@ def cmd_home_summary(user_id=1):
             + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), music_summary.get("broken_cover_art", 0), is_last=True)
         )
 
+        # Artist activity table (only artists that were processed today)
+        artist_rows = ""
+        for i, a in enumerate(music_summary.get("artists") or []):
+            is_last = (i == len(music_summary["artists"]) - 1)
+            border  = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            added_str   = f'<span style="color:#7ec89b;">+{a["added"]}</span>/{a["total"]}' if a["added"] else f'0/{a["total"]}'
+            no_match_str = f'<span style="color:#6b7280;">{a["no_match"]} no-match</span>' if a["no_match"] else ""
+            artist_rows += (
+                f'<tr><td style="padding:6px 16px;{border}font-size:12px;color:#9ca3af;">{safe(a["name"])}</td>'
+                f'<td style="padding:6px 16px;{border}font-size:12px;color:#9ca3af;text-align:right;white-space:nowrap;">'
+                f'{added_str}&nbsp;&nbsp;{no_match_str}</td></tr>'
+            )
+
+
+        artist_table = ""
+        if artist_rows:
+            artist_table = (
+                f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:16px 0 8px;">Spotify Batch</p>'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+                f'<table style="width:100%;border-collapse:collapse;">{artist_rows}</table>'
+                f'</div>'
+            )
+
         music_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
             '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Guapa Data Update</p>'
-            + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+            + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:{"16px" if artist_table else "40px"};">'
             + f'<div style="padding:4px 0;">'
             + f'<table style="width:100%;border-collapse:collapse;">{cov_rows}</table>'
             + '</div></div>'
+            + artist_table
         )
 
     from datetime import date as date_type
@@ -620,11 +650,11 @@ def cmd_home_summary(user_id=1):
             if cov:
                 plain += f"  {label}: {cov['pct']}%  ({cov['have']:,}/{cov['total']:,})\n"
     if strain_hits is not None:
-        plain += f"\nIN STOCK — {DEFAULT_STRAIN.title()}\n"
+        plain += f"\nIN STOCK — CROPS\n"
         if strain_hits:
             for m in strain_hits:
                 price = f"  {m['price']}" if m.get("price") else ""
-                plain += f"  {m['dispensary']}{price}\n  {m['url']}\n"
+                plain += f"  {m['strain_name'].title()} @ {m['dispensary']}{price}\n  {m['url']}\n"
         else:
             plain += "  Not in stock today.\n"
     if monthly and monthly["month_total"] > 0:
