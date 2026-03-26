@@ -461,18 +461,22 @@ def cmd_home_summary(user_id=1):
     if music_summary:
         cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b"}
 
-        def cov_row(label, cov, added=0, is_last=False):
+        def cov_row(label, cov, added=0, broken=0, is_last=False):
             if not cov:
                 return ""
-            color      = cov_colors.get(label, "#f0c014")
-            border     = "" if is_last else "border-bottom:1px solid #1f1f1f;"
-            delta_html = f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{added} today</span>' if added else ""
+            color  = cov_colors.get(label, "#f0c014")
+            border = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            deltas = ""
+            if added:
+                deltas += f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{added} today</span>'
+            if broken:
+                deltas += f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{broken} broken</span>'
             return (
                 f'<tr><td style="padding:10px 16px;{border}">'
                 f'<table style="width:100%;border-collapse:collapse;"><tr>'
                 f'<td style="font-size:13px;color:#9ca3af;">{label}</td>'
                 f'<td style="text-align:right;font-size:13px;color:#9ca3af;font-weight:500;white-space:nowrap;">'
-                f'{cov["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{cov["have"]:,}/{cov["total"]:,}{delta_html}</span>'
+                f'{cov["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{cov["have"]:,}/{cov["total"]:,}{deltas}</span>'
                 f'</td></tr></table>'
                 f'<div style="background:#1f1f1f;border-radius:3px;height:6px;margin-top:6px;">'
                 f'<div style="background:{color};border-radius:3px;height:6px;width:{cov["pct"]}%;"></div>'
@@ -481,31 +485,14 @@ def cmd_home_summary(user_id=1):
             )
 
         cov_rows = (
-            cov_row("Spotify",   music_summary.get("spotify"),   music_summary.get("spotify_added",    0))
-            + cov_row("Wikipedia", music_summary.get("wikipedia"), music_summary.get("wikipedia_added",  0))
-            + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), is_last=True)
+            cov_row("Spotify",   music_summary.get("spotify"),   music_summary.get("spotify_added",    0), music_summary.get("broken_spotify",   0))
+            + cov_row("Wikipedia", music_summary.get("wikipedia"), music_summary.get("wikipedia_added",  0), music_summary.get("broken_wikipedia", 0))
+            + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), music_summary.get("broken_cover_art", 0), is_last=True)
         )
-
-        changes = []
-        if music_summary.get("spotify_added"):
-            changes.append(f'{music_summary["spotify_added"]} Spotify URLs')
-        if music_summary.get("wikipedia_added"):
-            changes.append(f'{music_summary["wikipedia_added"]} Wikipedia URLs')
-        if music_summary.get("cover_art_filled"):
-            changes.append(f'{music_summary["cover_art_filled"]} cover art')
-        if music_summary.get("new_albums"):
-            changes.append(f'{music_summary["new_albums"]} new albums')
-        if music_summary.get("broken_links"):
-            changes.append(f'{music_summary["broken_links"]} broken catalog URL{"s" if music_summary["broken_links"] != 1 else ""}')
-
-        total   = music_summary.get("total_changes", 0)
-        sub     = ", ".join(changes) if changes else "No changes today"
-        sub_html = f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{total} changes &middot; {safe(sub)}</p>'
 
         music_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Guapa Data Update</p>'
-            + sub_html
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Guapa Data Update</p>'
             + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
             + f'<div style="padding:4px 0;">'
             + f'<table style="width:100%;border-collapse:collapse;">{cov_rows}</table>'
