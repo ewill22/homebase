@@ -13,6 +13,7 @@ from gcal import get_upcoming_events, get_devils_games
 from spotify import get_weekly_listens, get_monthly_recap
 from strain_checker import get_strain_stock, DEFAULT_STRAIN
 from steps import get_steps_yesterday, get_daily_target, MONTHLY_GOAL as STEPS_MONTHLY_GOAL
+from guapa_music import get_music_summary
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -121,6 +122,10 @@ def cmd_home_summary(user_id=1):
     except Exception:
         steps_yesterday = None
         steps_target    = None
+    try:
+        music_summary = get_music_summary()
+    except Exception:
+        music_summary = None
     try:
         listening = get_weekly_listens()
     except Exception:
@@ -451,6 +456,62 @@ def cmd_home_summary(user_id=1):
                 f'<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">{safe(DEFAULT_STRAIN.title())} &mdash; not in stock today.</p>'
             )
 
+    # — Guapa Music section —
+    music_section = ""
+    if music_summary:
+        def cov_row(label, cov):
+            if not cov:
+                return ""
+            delta_html = ""
+            if cov["delta"] > 0:
+                delta_html = f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{cov["delta"]}</span>'
+            elif cov["delta"] < 0:
+                delta_html = f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{cov["delta"]}</span>'
+            bar_pct = cov["pct"]
+            return (
+                f'<tr>'
+                f'<td style="padding:7px 16px;font-size:13px;color:#9ca3af;white-space:nowrap;width:1%;">{label}</td>'
+                f'<td style="padding:7px 12px 7px 0;">'
+                f'<div style="background:#1f1f1f;border-radius:3px;height:6px;width:100%;">'
+                f'<div style="background:#f0c014;border-radius:3px;height:6px;width:{bar_pct}%;"></div>'
+                f'</div></td>'
+                f'<td style="padding:7px 4px 7px 0;font-size:13px;color:#9ca3af;text-align:right;white-space:nowrap;font-weight:500;">{cov["pct"]}%</td>'
+                f'<td style="padding:7px 16px 7px 4px;font-size:11px;color:#6b7280;white-space:nowrap;">{cov["have"]:,}/{cov["total"]:,}{delta_html}</td>'
+                f'</tr>'
+            )
+
+        cov_rows = (
+            cov_row("Spotify", music_summary.get("spotify"))
+            + cov_row("Wikipedia", music_summary.get("wikipedia"))
+            + cov_row("Cover art", music_summary.get("cover_art"))
+        )
+
+        changes = []
+        if music_summary.get("spotify_added"):
+            changes.append(f'{music_summary["spotify_added"]} Spotify URLs')
+        if music_summary.get("wikipedia_added"):
+            changes.append(f'{music_summary["wikipedia_added"]} Wikipedia URLs')
+        if music_summary.get("cover_art_filled"):
+            changes.append(f'{music_summary["cover_art_filled"]} cover art')
+        if music_summary.get("new_albums"):
+            changes.append(f'{music_summary["new_albums"]} new albums')
+        if music_summary.get("broken_links"):
+            changes.append(f'{music_summary["broken_links"]} broken links')
+
+        total   = music_summary.get("total_changes", 0)
+        sub     = ", ".join(changes) if changes else "No changes today"
+        sub_html = f'<p style="font-size:13px;color:#6e6e73;margin:0 0 16px;">{total} changes &middot; {safe(sub)}</p>'
+
+        music_section = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Guapa Music</p>'
+            + sub_html
+            + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+            + f'<div style="padding:4px 0;">'
+            + f'<table style="width:100%;border-collapse:collapse;">{cov_rows}</table>'
+            + '</div></div>'
+        )
+
     from datetime import date as date_type
     birthday    = date_type.fromisoformat(str(user["birthday"])) if user.get("birthday") else None
     day_of_life = (today - birthday).days + 1 if birthday else None
@@ -515,6 +576,7 @@ def cmd_home_summary(user_id=1):
         + listening_section
         + strain_section
         + monthly_section
+        + music_section
         + '</div>'   # end white content
         + '</div>'   # end outer wrapper
     )
@@ -564,6 +626,12 @@ def cmd_home_summary(user_id=1):
             plain += f"  {count}x  {artist}\n"
     if steps_yesterday is not None and steps_target is not None:
         plain += f"\nSTEPS\n  {steps_yesterday:,} yesterday  (need {steps_target:,}/day for {STEPS_MONTHLY_GOAL:,} avg)\n"
+    if music_summary:
+        plain += f"\nGUAPA MUSIC\n  {music_summary.get('total_changes', 0)} changes today\n"
+        for label, key in [("Spotify", "spotify"), ("Wikipedia", "wikipedia"), ("Cover art", "cover_art")]:
+            cov = music_summary.get(key)
+            if cov:
+                plain += f"  {label}: {cov['pct']}%  ({cov['have']:,}/{cov['total']:,})\n"
     if strain_hits is not None:
         plain += f"\nIN STOCK — {DEFAULT_STRAIN.title()}\n"
         if strain_hits:
