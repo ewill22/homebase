@@ -459,6 +459,8 @@ def cmd_home_summary(user_id=1):
     # — Guapa Music section —
     music_section = ""
     if music_summary:
+        cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b"}
+
         def cov_row(label, cov):
             if not cov:
                 return ""
@@ -467,13 +469,13 @@ def cmd_home_summary(user_id=1):
                 delta_html = f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{cov["delta"]}</span>'
             elif cov["delta"] < 0:
                 delta_html = f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{cov["delta"]}</span>'
-            bar_pct = cov["pct"]
+            color = cov_colors.get(label, "#f0c014")
             return (
                 f'<tr>'
                 f'<td style="padding:7px 16px;font-size:13px;color:#9ca3af;white-space:nowrap;width:1%;">{label}</td>'
                 f'<td style="padding:7px 12px 7px 0;">'
                 f'<div style="background:#1f1f1f;border-radius:3px;height:6px;width:100%;">'
-                f'<div style="background:#f0c014;border-radius:3px;height:6px;width:{bar_pct}%;"></div>'
+                f'<div style="background:{color};border-radius:3px;height:6px;width:{cov["pct"]}%;"></div>'
                 f'</div></td>'
                 f'<td style="padding:7px 4px 7px 0;font-size:13px;color:#9ca3af;text-align:right;white-space:nowrap;font-weight:500;">{cov["pct"]}%</td>'
                 f'<td style="padding:7px 16px 7px 4px;font-size:11px;color:#6b7280;white-space:nowrap;">{cov["have"]:,}/{cov["total"]:,}{delta_html}</td>'
@@ -496,7 +498,7 @@ def cmd_home_summary(user_id=1):
         if music_summary.get("new_albums"):
             changes.append(f'{music_summary["new_albums"]} new albums')
         if music_summary.get("broken_links"):
-            changes.append(f'{music_summary["broken_links"]} broken links')
+            changes.append(f'{music_summary["broken_links"]} broken catalog URL{"s" if music_summary["broken_links"] != 1 else ""}')
 
         total   = music_summary.get("total_changes", 0)
         sub     = ", ".join(changes) if changes else "No changes today"
@@ -504,7 +506,7 @@ def cmd_home_summary(user_id=1):
 
         music_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
-            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Guapa Music</p>'
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">Guapa Data Update</p>'
             + sub_html
             + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
             + f'<div style="padding:4px 0;">'
