@@ -470,7 +470,7 @@ def cmd_home_summary(user_id=1):
             if added:
                 deltas += f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{added} today</span>'
             if broken:
-                deltas += f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{broken} broken</span>'
+                deltas += f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{broken} URL error{"s" if broken != 1 else ""}</span>'
             return (
                 f'<tr><td style="padding:10px 16px;{border}">'
                 f'<table style="width:100%;border-collapse:collapse;"><tr>'
