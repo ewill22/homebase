@@ -461,31 +461,28 @@ def cmd_home_summary(user_id=1):
     if music_summary:
         cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b"}
 
-        def cov_row(label, cov):
+        def cov_row(label, cov, is_last=False):
             if not cov:
                 return ""
-            delta_html = ""
-            if cov["delta"] > 0:
-                delta_html = f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{cov["delta"]}</span>'
-            elif cov["delta"] < 0:
-                delta_html = f'<span style="color:#ff887c;font-size:11px;margin-left:6px;">{cov["delta"]}</span>'
-            color = cov_colors.get(label, "#f0c014")
+            color  = cov_colors.get(label, "#f0c014")
+            border = "" if is_last else "border-bottom:1px solid #1f1f1f;"
             return (
-                f'<tr>'
-                f'<td style="padding:7px 16px;font-size:13px;color:#9ca3af;white-space:nowrap;width:1%;">{label}</td>'
-                f'<td style="padding:7px 12px 7px 0;">'
-                f'<div style="background:#1f1f1f;border-radius:3px;height:6px;width:100%;">'
+                f'<tr><td style="padding:10px 16px;{border}">'
+                f'<table style="width:100%;border-collapse:collapse;"><tr>'
+                f'<td style="font-size:13px;color:#9ca3af;">{label}</td>'
+                f'<td style="text-align:right;font-size:13px;color:#9ca3af;font-weight:500;white-space:nowrap;">'
+                f'{cov["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{cov["have"]:,}/{cov["total"]:,}</span>'
+                f'</td></tr></table>'
+                f'<div style="background:#1f1f1f;border-radius:3px;height:6px;margin-top:6px;">'
                 f'<div style="background:{color};border-radius:3px;height:6px;width:{cov["pct"]}%;"></div>'
-                f'</div></td>'
-                f'<td style="padding:7px 4px 7px 0;font-size:13px;color:#9ca3af;text-align:right;white-space:nowrap;font-weight:500;">{cov["pct"]}%</td>'
-                f'<td style="padding:7px 16px 7px 4px;font-size:11px;color:#6b7280;white-space:nowrap;">{cov["have"]:,}/{cov["total"]:,}{delta_html}</td>'
-                f'</tr>'
+                f'</div>'
+                f'</td></tr>'
             )
 
         cov_rows = (
-            cov_row("Spotify", music_summary.get("spotify"))
+            cov_row("Spotify",   music_summary.get("spotify"))
             + cov_row("Wikipedia", music_summary.get("wikipedia"))
-            + cov_row("Cover art", music_summary.get("cover_art"))
+            + cov_row("Cover art", music_summary.get("cover_art"), is_last=True)
         )
 
         changes = []
