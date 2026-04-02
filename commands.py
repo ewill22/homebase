@@ -733,5 +733,30 @@ def check_and_respond():
     conn.logout()
     print(f"Processed {len(ids)} command(s).")
 
+    # — Guapa editorial suggestions —
+    check_guapa_suggestions()
+
+def check_guapa_suggestions():
+    """Check for unread Formspree submission emails and apply to guapa-site CSVs."""
+    import subprocess
+    conn = get_imap()
+    conn.select("INBOX")
+    _, data = conn.search(None, '(UNSEEN FROM "formspree")')
+    ids = data[0].split()
+    conn.logout()
+
+    if not ids:
+        return
+
+    print(f"Found {len(ids)} unread Formspree email(s) — running apply-suggestions...")
+    result = subprocess.run(
+        ["python", r"C:\Users\eewil\guapa\guapa-site\guapa-site\scripts\apply-suggestions.py"],
+        cwd=r"C:\Users\eewil\guapa\guapa-site\guapa-site",
+        capture_output=True, text=True
+    )
+    print(result.stdout)
+    if result.returncode != 0:
+        print("apply-suggestions error:", result.stderr)
+
 if __name__ == "__main__":
     check_and_respond()
