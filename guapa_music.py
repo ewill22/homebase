@@ -6,7 +6,7 @@ import os
 import re
 from datetime import date
 
-REPORTS_DIR = r"C:\Users\eewil\guapa-data\music\reports"
+REPORTS_DIR = r"C:\Users\eewil\guapa\guapa-data\music\reports"
 
 
 def get_music_summary():
@@ -62,6 +62,42 @@ def get_music_summary():
         except Exception:
             pass
 
+    # Parse editorial content stats
+    editorial = None
+    ed_desc = find_coverage("Descriptions")
+    if ed_desc:
+        ed_new = find_int(r"New today\s+(\d+)")
+        ed_review = find_int(r"Needs review\s+(\d+)")
+        # Parse new descriptions: lines like "    + Artist Name" followed by "      description"
+        ed_artists = []
+        for m in re.finditer(
+            r"^\s+\+\s+(.+?)\n\s{6,}(.+?)$",
+            text, re.MULTILINE
+        ):
+            ed_artists.append({
+                "name": m.group(1).strip(),
+                "description": m.group(2).strip(),
+            })
+        # Parse needs-review: lines like "    ~ Artist Name" followed by "      description"
+        review_artists = []
+        for m in re.finditer(
+            r"^\s+~\s+(.+?)\n\s{6,}(.+?)$",
+            text, re.MULTILINE
+        ):
+            review_artists.append({
+                "name": m.group(1).strip(),
+                "description": m.group(2).strip(),
+            })
+        editorial = {
+            "descriptions": ed_desc,
+            "confirmed": find_coverage("Confirmed artists"),
+            "remaining": find_int(r"Remaining\s+(\d+)"),
+            "needs_review": ed_review or 0,
+            "review_artists": review_artists,
+            "new_today": ed_new or 0,
+            "artists": ed_artists,
+        }
+
     return {
         "date":                  today,
         "total_changes":         find_int(r"Total changes:\s+(\d+)"),
@@ -77,5 +113,6 @@ def get_music_summary():
         "spotify":               find_coverage("Spotify URLs"),
         "wikipedia":             find_coverage("Wikipedia URLs"),
         "cover_art":             find_coverage("Cover art"),
+        "editorial":             editorial,
         "artists":               artists,
     }
