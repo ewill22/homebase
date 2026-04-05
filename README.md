@@ -50,13 +50,17 @@ Homebase never scrapes or collects raw data directly (except weather, Spotify pl
 
 | Task | Schedule | Script | Status |
 |---|---|---|---|
-| Guapa Strains Sync | Daily 6:30 AM | `guapa-data/strains/sync.py` | Active |
-| Homebase Steps Sync | Daily 6:50 AM | `health_steps.py --sync` | Active |
+| Homebase iCloud Nudge | Daily 6:45 AM | PowerShell iCloud sync | Active |
+| Homebase Steps Sync | Daily 6:50 AM | `steps_sync.bat` → `health_steps.py --sync` | Active |
 | Homebase Morning Summary | Daily 7:00 AM | `send_summary.py` | Active |
 | Homebase Spotify Tracker | Every 5 min | `spotify_tracker.py` | Active |
-| Homebase Commands | Every 5 min | `commands.py` | **Disabled** |
+| Homebase Commands | Every 5 min | `commands.py` | Active |
+| Guapa Apply Editorial Suggestions | Every 5 min | `guapa-site/scripts/apply-suggestions.py` | Active |
 
-All tasks use the full path to `python.exe` (`C:\Users\eewil\AppData\Local\Programs\Python\Python314\python.exe`) since Task Scheduler doesn't inherit PATH.
+All tasks run hidden (no console window popups):
+- Python-only tasks use `pythonw.exe` (windowless Python interpreter)
+- Tasks needing stdout logging use bat wrappers + `run-hidden.vbs` (in guapa-data repo)
+- PowerShell tasks use `-WindowStyle Hidden`
 
 ---
 
@@ -211,9 +215,11 @@ homebase/
 ├── spotify_tracker.py    # Poll + store recently played tracks (every 5 min)
 ├── spotify.py            # Query helpers for weekly/monthly listening data
 ├── strain_checker.py     # Thin reader → guapa.strain_stock
+├── guapa_music.py        # Parse guapa-data DQ summary (coverage, editorial, enrichment)
 ├── health_steps.py       # Apple Health step CLI (sync, import-xml, history views)
 ├── steps.py              # Thin reader for morning email (yesterday + daily target)
-├── commands.py           # Email command listener + home summary builder (task disabled)
+├── steps_sync.bat        # Task Scheduler wrapper for health_steps.py --sync
+├── commands.py           # Email command listener + home summary builder
 ├── send_summary.py       # Morning email entry point (daily 7 AM)
 └── work/                 # Business/analytics files (leads_simple.sql etc.)
 ```
