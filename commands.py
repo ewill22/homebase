@@ -35,8 +35,11 @@ def cmd_home_summary(user_id=1):
     cfg  = get_config(user_id)
     user = cfg["user"]
 
-    fetch_and_store(user_id)
-    cities = fetch_all(user_id)
+    try:
+        fetch_and_store(user_id)
+        cities = fetch_all(user_id)
+    except Exception:
+        cities = []
     from zoneinfo import ZoneInfo
     from datetime import date, timedelta
     import random
@@ -465,7 +468,7 @@ def cmd_home_summary(user_id=1):
     # — Guapa Music section —
     music_section = ""
     if music_summary:
-        cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b"}
+        cov_colors = {"Spotify": "#f0c014", "Wikipedia": "#88a8d4", "Cover art": "#7ec89b", "Genius": "#e8a0b0", "MB tracks": "#f0a14a"}
 
         def cov_row(label, cov, added=0, broken=0, is_last=False):
             if not cov:
@@ -490,10 +493,52 @@ def cmd_home_summary(user_id=1):
                 f'</td></tr>'
             )
 
+        # Build editorial row to include in the same container
+        ed = music_summary.get("editorial")
+        # Peek ahead: does track enrichment follow editorial? (for border)
+        _te_peek = music_summary.get("track_enrichment") or {}
+        _te_follows = bool(_te_peek.get("genius_urls") or _te_peek.get("mb_enriched"))
+        ed_cov_row = ""
+        if ed and ed.get("descriptions"):
+            ed_desc = ed["descriptions"]
+            ed_deltas = ""
+            if ed.get("new_today"):
+                ed_deltas += f'<span style="color:#7ec89b;font-size:11px;margin-left:6px;">+{ed["new_today"]} today</span>'
+            if ed.get("needs_review"):
+                ed_deltas += f'<span style="color:#f0c014;font-size:11px;margin-left:6px;">{ed["needs_review"]} needs review</span>'
+            new_artist_list = ""
+            for a in ed.get("artists") or []:
+                new_artist_list += (
+                    f'<p style="margin:4px 0 0;font-size:11px;color:#6b7280;">'
+                    f'<span style="color:#7ec89b;">+</span> {safe(a["name"])} — {safe(a["description"])}</p>'
+                )
+            _ed_border = "border-bottom:1px solid #1f1f1f;" if _te_follows else ""
+            ed_cov_row = (
+                f'<tr><td style="padding:10px 16px;{_ed_border}">'
+                f'<table style="width:100%;border-collapse:collapse;"><tr>'
+                f'<td style="font-size:13px;color:#9ca3af;">Descriptions</td>'
+                f'<td style="text-align:right;font-size:13px;color:#9ca3af;font-weight:500;white-space:nowrap;">'
+                f'{ed_desc["pct"]}% <span style="color:#6b7280;font-weight:400;font-size:11px;">{ed_desc["have"]:,}/{ed_desc["total"]:,}{ed_deltas}</span>'
+                f'</td></tr></table>'
+                f'<div style="background:#1f1f1f;border-radius:3px;height:6px;margin-top:6px;">'
+                f'<div style="background:#d97af2;border-radius:3px;height:6px;width:{ed_desc["pct"]}%;"></div>'
+                f'</div>'
+                + new_artist_list +
+                f'</td></tr>'
+            )
+
+        # Track enrichment rows (Genius URLs + MB enriched albums)
+        te = music_summary.get("track_enrichment") or {}
+        te_totals = te.get("run_totals") or {}
+        has_ed = bool(ed_cov_row)
+        has_te = bool(te.get("genius_urls") or te.get("mb_enriched"))
         cov_rows = (
             cov_row("Spotify",   music_summary.get("spotify"),   music_summary.get("spotify_added",    0), music_summary.get("broken_spotify",   0))
             + cov_row("Wikipedia", music_summary.get("wikipedia"), music_summary.get("wikipedia_added",  0), music_summary.get("broken_wikipedia", 0))
-            + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), music_summary.get("broken_cover_art", 0), is_last=True)
+            + cov_row("Cover art", music_summary.get("cover_art"), music_summary.get("cover_art_filled", 0), music_summary.get("broken_cover_art", 0), is_last=not (has_ed or has_te))
+            + ed_cov_row
+            + cov_row("Genius",    te.get("genius_urls"),  0, 0)
+            + cov_row("MB tracks", te.get("mb_enriched"),  te_totals.get("albums_processed", 0), 0, is_last=True)
         )
 
         # Artist activity table (only artists that were processed today)
@@ -509,24 +554,67 @@ def cmd_home_summary(user_id=1):
                 f'{added_str}&nbsp;&nbsp;{no_match_str}</td></tr>'
             )
 
-
         artist_table = ""
         if artist_rows:
             artist_table = (
                 f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:16px 0 8px;">Spotify Batch</p>'
-                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:16px;">'
                 f'<table style="width:100%;border-collapse:collapse;">{artist_rows}</table>'
                 f'</div>'
             )
 
+        # Track Enrichment Batch — per-artist MB enrichment activity today
+        te_artist_rows = ""
+        te_artists_list = (te.get("artists") or []) if te else []
+        for i, a in enumerate(te_artists_list):
+            is_last = (i == len(te_artists_list) - 1)
+            border  = "" if is_last else "border-bottom:1px solid #1f1f1f;"
+            alb_s = "album" if a["albums"] == 1 else "albums"
+            te_artist_rows += (
+                f'<tr><td style="padding:6px 16px;{border}font-size:12px;color:#9ca3af;">{safe(a["name"])}</td>'
+                f'<td style="padding:6px 16px;{border}font-size:12px;color:#9ca3af;text-align:right;white-space:nowrap;">'
+                f'<span style="color:#f0a14a;">+{a["albums"]}</span> {alb_s} <span style="color:#6b7280;">&middot; {a["tracks"]} tracks</span>'
+                f'</td></tr>'
+            )
+
+        te_artist_table = ""
+        if te_artist_rows:
+            # Run totals caption (covers/writers/featured today)
+            caption = ""
+            if te_totals:
+                bits = []
+                if te_totals.get("covers_found"):
+                    bits.append(f'{te_totals["covers_found"]} covers')
+                if te_totals.get("writers_added"):
+                    bits.append(f'{te_totals["writers_added"]} writers')
+                if te_totals.get("featured_added"):
+                    bits.append(f'{te_totals["featured_added"]} featured')
+                if bits:
+                    caption = (
+                        f'<p style="margin:10px 16px 10px;font-size:11px;color:#6b7280;">'
+                        f'{" &middot; ".join(bits)}</p>'
+                    )
+            te_artist_table = (
+                f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:16px 0 8px;">Track Enrichment Batch</p>'
+                f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:40px;">'
+                f'<table style="width:100%;border-collapse:collapse;">{te_artist_rows}</table>'
+                f'{caption}'
+                f'</div>'
+            )
+        # If spotify batch was empty but we have a TE batch, drop the bottom margin of the coverage card
+        if not artist_rows and te_artist_rows:
+            pass  # the coverage card's margin handles it
+
+        _has_batch = bool(artist_table or te_artist_table)
         music_section = (
             '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
             '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Guapa Data Update</p>'
-            + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:{"16px" if artist_table else "40px"};">'
+            + f'<div style="background:#111111;border-radius:8px;overflow:hidden;margin-bottom:{"16px" if _has_batch else "40px"};">'
             + f'<div style="padding:4px 0;">'
             + f'<table style="width:100%;border-collapse:collapse;">{cov_rows}</table>'
             + '</div></div>'
             + artist_table
+            + te_artist_table
         )
 
     from datetime import date as date_type
@@ -558,9 +646,8 @@ def cmd_home_summary(user_id=1):
         if weekend_events:
             calendar_section += cal_hr + cal_label.format("What's going on this weekend") + cal_table.format(event_rows(weekend_events))
     else:  # Sun
-        all_events = workday_events + weekend_events
-        if all_events:
-            calendar_section += cal_hr + cal_label.format("Next week") + cal_table.format(event_rows(all_events))
+        if workday_events:
+            calendar_section += cal_hr + cal_label.format("Next week") + cal_table.format(event_rows(workday_events))
 
     LOGO_URL = user.get("logo_url") or "https://ewill22.github.io/guapa-site/assets/guapa_logo_dark.png"
     date_str    = datetime.now(ZoneInfo(user["timezone"])).strftime('%A, %B %d')
@@ -586,8 +673,11 @@ def cmd_home_summary(user_id=1):
         f'<p style="font-size:15px;color:#6e6e73;margin:0 0 6px;">{date_str}</p>'
         f'{day_ol_line}'
         + steps_section
-        + '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Weather</p>'
-        f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{city_rows}</table>'
+        + (
+            '<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 16px;">Weather</p>'
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">{city_rows}</table>'
+            if city_rows else ""
+        )
         + calendar_section
         + f'{devils_section}'
         + listening_section
@@ -610,10 +700,11 @@ def cmd_home_summary(user_id=1):
         return out
 
     plain = f"homebase | {now_local.strftime('%A, %B %d')}\n\n"
-    plain += "WEATHER\n"
-    for c in cities:
-        plain += f"  {c['name']}: {c['temp']}{c['unit']}, {c['humidity']}% humidity, {c['wind']} {c['wind_unit']}\n"
-    plain += "\n"
+    if cities:
+        plain += "WEATHER\n"
+        for c in cities:
+            plain += f"  {c['name']}: {c['temp']}{c['unit']}, {c['humidity']}% humidity, {c['wind']} {c['wind_unit']}\n"
+        plain += "\n"
     if weekday <= 2:
         if workday_events:
             plain += f"WHAT'S UP NEXT THIS WEEK\n{plain_rows(workday_events)}\n"
@@ -632,9 +723,8 @@ def cmd_home_summary(user_id=1):
         if weekend_events:
             plain += f"WHAT'S GOING ON THIS WEEKEND\n{plain_rows(weekend_events)}\n"
     else:
-        all_events = workday_events + weekend_events
-        if all_events:
-            plain += f"NEXT WEEK\n{plain_rows(all_events)}\n"
+        if workday_events:
+            plain += f"NEXT WEEK\n{plain_rows(workday_events)}\n"
     if devils:
         plain += f"{'DEVILS — TONIGHT' if devils_today else 'DEVILS — TOMORROW'}\n{plain_rows(devils)}\n"
     if listening and listening["total"] > 0:
@@ -649,6 +739,24 @@ def cmd_home_summary(user_id=1):
             cov = music_summary.get(key)
             if cov:
                 plain += f"  {label}: {cov['pct']}%  ({cov['have']:,}/{cov['total']:,})\n"
+        te = music_summary.get("track_enrichment") or {}
+        if te.get("genius_urls"):
+            g = te["genius_urls"]
+            plain += f"  Genius URLs: {g['pct']}%  ({g['have']:,}/{g['total']:,})\n"
+        if te.get("mb_enriched"):
+            mb = te["mb_enriched"]
+            plain += f"  MB tracks: {mb['pct']}%  ({mb['have']:,}/{mb['total']:,})\n"
+        te_totals = te.get("run_totals") or {}
+        if te_totals.get("albums_processed"):
+            plain += (
+                f"  Track enrichment today: {te_totals['albums_processed']} albums, "
+                f"{te_totals.get('tracks_enriched', 0)} tracks, "
+                f"{te_totals.get('covers_found', 0)} covers, "
+                f"{te_totals.get('writers_added', 0)} writers, "
+                f"{te_totals.get('featured_added', 0)} featured\n"
+            )
+        for a in (te.get("artists") or []):
+            plain += f"    {a['name']}: +{a['albums']} album{'s' if a['albums'] != 1 else ''}, {a['tracks']} tracks\n"
     if strain_hits is not None:
         plain += f"\nIN STOCK — CROPS\n"
         if strain_hits:

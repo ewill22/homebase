@@ -42,13 +42,14 @@ def get_music_summary():
 
     # Parse per-artist activity from the daily log
     artists = []
+    track_enriched_artists = []
+    track_run_totals = None
     log_path = os.path.join(REPORTS_DIR, f"daily-{today}.log")
     if os.path.isfile(log_path):
         try:
             with open(log_path, encoding="utf-8", errors="replace") as f:
                 log_text = f.read()
-            # Lines like: "  Sam Cooke: +4/11 spotify, 7 marked no-match"
-            # or:          "  Beastie Boys: +1/1 spotify"
+            # Spotify lines: "  Sam Cooke: +4/11 spotify, 7 marked no-match"
             for m in re.finditer(
                 r"^\s+(.+?):\s+\+(\d+)/(\d+) spotify(?:,\s+(\d+) marked no-match)?",
                 log_text, re.MULTILINE
@@ -59,8 +60,59 @@ def get_music_summary():
                     "total":    int(m.group(3)),
                     "no_match": int(m.group(4)) if m.group(4) else 0,
                 })
+
+            # Track enrichment per-album lines, isolated to the Step 2 block:
+            #   Rick Nelson — Ricky (1957)
+            #     12 tracks enriched
+            step2 = re.search(
+                r"Step 2: Track enrichment(.*?)(?:Step 3:|\Z)",
+                log_text, re.DOTALL
+            )
+            if step2:
+                block = step2.group(1)
+                # Aggregate by artist name
+                by_artist = {}
+                for m in re.finditer(
+                    r"^  (.+?) \u2014 .+?\n    (\d+) tracks enriched",
+                    block, re.MULTILINE
+                ):
+                    name = m.group(1).strip()
+                    tracks = int(m.group(2))
+                    entry = by_artist.setdefault(name, {"name": name, "albums": 0, "tracks": 0})
+                    entry["albums"] += 1
+                    entry["tracks"] += tracks
+                track_enriched_artists = list(by_artist.values())
+
+                # Run summary totals
+                def _find(pat):
+                    m = re.search(pat, block)
+                    return int(m.group(1)) if m else None
+                albums_processed = _find(r"Albums processed:\s+(\d+)")
+                if albums_processed is not None:
+                    track_run_totals = {
+                        "albums_processed": albums_processed,
+                        "tracks_enriched":  _find(r"Tracks enriched:\s+(\d+)") or 0,
+                        "covers_found":     _find(r"Covers found:\s+(\d+)") or 0,
+                        "featured_added":   _find(r"Featured artists:\s+(\d+)") or 0,
+                        "writers_added":    _find(r"External writers:\s+(\d+)") or 0,
+                    }
         except Exception:
             pass
+
+    # Parse TRACK ENRICHMENT section from the summary
+    track_enrichment = None
+    genius_cov = find_coverage("Genius URLs")
+    mb_cov = find_coverage("MB enriched albums")
+    if genius_cov or mb_cov:
+        track_enrichment = {
+            "genius_urls":       genius_cov,
+            "mb_enriched":       mb_cov,
+            "covers_flagged":    find_int(r"Covers flagged\s+(\d+)"),
+            "writer_credits":    find_int(r"Writer credits\s+(\d+)"),
+            "featured_artists":  find_int(r"Featured artists\s+(\d+)"),
+            "run_totals":        track_run_totals,
+            "artists":           track_enriched_artists,
+        }
 
     # Parse editorial content stats
     editorial = None
@@ -115,4 +167,5 @@ def get_music_summary():
         "cover_art":             find_coverage("Cover art"),
         "editorial":             editorial,
         "artists":               artists,
+        "track_enrichment":      track_enrichment,
     }
