@@ -189,12 +189,18 @@ Query helpers in `spotify.py`:
 
 ---
 
-## Strain Stock (`strain_checker.py`)
+## Strain Stock
 
-Thin reader only. All data collection happens in `guapa-data/strains/`.
+Full pipeline — scraper + DB writer + morning email reader all live here.
 
-- `get_strain_stock(strain="secret meetings")` — queries `guapa.strain_stock` for the latest snapshot
-- Returns: `dispensary, name, brand, category, price, url, listed_at, package_id, strain_type, crops_grower, new_batch`
+- `strain_sync.py` — collector: sweeps 12 NJ dispensaries (DispenseApp, Dutchie, Sweed/HTML) for known Crops strains, detects white-label listings, writes a full snapshot to `guapa.strain_stock`. Runs daily 6:30 AM via `strain_sync_run.py` + `strain_sync.bat`.
+- `strain_checker.py` — thin reader: queries latest snapshot for the morning email.
+  - `get_strain_stock(strain)` — latest in-stock rows for one strain
+  - `get_all_strain_hits()` — tracked strains + terpene-trio matches
+
+**Schema (`guapa.strain_stock`):** checked_at, dispensary, strain_name, brand, product_name, category, price, in_stock, menu_url, listed_at, package_id, strain_type, potency, cannabinoids (thc/thca/cbd/cbda/cbg/cbn), terpenes (limonene/beta_myrcene/beta_caryophyllene/humulene/alpha_pinene/beta_pinene/linalool/ocimene/terpinolene/bisabolol), whitelabel, crops_grower, new_batch.
+
+**Dutchie bypass:** requires `curl-cffi` with `impersonate="chrome120"` (standard urllib gets 403).
 
 ---
 
@@ -214,7 +220,11 @@ homebase/
 ├── spotify_auth.py       # Spotify OAuth2
 ├── spotify_tracker.py    # Poll + store recently played tracks (every 5 min)
 ├── spotify.py            # Query helpers for weekly/monthly listening data
-├── strain_checker.py     # Thin reader → guapa.strain_stock
+├── strain_checker.py     # Thin reader → guapa.strain_stock (morning email)
+├── strain_sync.py        # Collector: 12 NJ dispensaries → guapa.strain_stock
+├── strain_sync_run.py    # Entry point for 6:30 AM scheduled task
+├── strain_sync.bat       # Task Scheduler wrapper for strain_sync_run.py
+├── run-hidden.vbs        # VBS wrapper for hidden bat file execution
 ├── guapa_music.py        # Parse guapa-data DQ summary (coverage, editorial, enrichment)
 ├── health_steps.py       # Apple Health step CLI (sync, import-xml, history views)
 ├── steps.py              # Thin reader for morning email (yesterday + daily target)

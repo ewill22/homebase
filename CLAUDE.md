@@ -11,7 +11,7 @@ Rules and context for working in this repo.
 - **Email subject lines must be ASCII only** — em dashes, curly quotes etc. break Gmail threading
 - **Degree symbols in HTML must be `&deg;`** — bare ° breaks Gmail rendering mid-email
 - **Task Scheduler uses full python path**: `C:\Users\eewil\AppData\Local\Programs\Python\Python314\python.exe` — `python` alone won't work since PATH isn't inherited
-- **All tasks run hidden** — no console popups. Use `pythonw.exe` for direct Python tasks, or `wscript.exe` + `run-hidden.vbs` (in guapa-data repo) for bat file tasks. Never use `python.exe` directly in Task Scheduler.
+- **All tasks run hidden** — no console popups. Use `pythonw.exe` for direct Python tasks, or `wscript.exe` + `run-hidden.vbs` (in this repo root) for bat file tasks. Never use `python.exe` directly in Task Scheduler.
 
 ## Architecture
 
@@ -29,6 +29,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 
 | Task | Schedule | Executor | Status |
 |------|----------|----------|--------|
+| Guapa Strains Sync | Daily 6:30 AM | `wscript.exe` + `strain_sync.bat` | Active |
 | Homebase iCloud Nudge | Daily 6:45 AM | `powershell.exe -WindowStyle Hidden` | Active |
 | Homebase Steps Sync | Daily 6:50 AM | `wscript.exe` + `steps_sync.bat` | Active |
 | Homebase Morning Summary | Daily 7:00 AM | `pythonw.exe send_summary.py` | Active |
@@ -38,7 +39,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 
 **Popup suppression:** Eric's PC uses PIN login (no Windows password), so "Run whether user is logged on or not" doesn't work. Instead:
 - Python-only tasks use `pythonw.exe` (windowless Python, drops stdout — OK if script logs to file/DB)
-- Tasks needing stdout redirect use bat file + `run-hidden.vbs` from guapa-data repo
+- Tasks needing stdout redirect use bat file + `run-hidden.vbs` (in this repo root)
 - PowerShell tasks use `-WindowStyle Hidden`
 - Use `Set-ScheduledTask` (not `schtasks /Change`) to update tasks — avoids password prompt
 
@@ -46,6 +47,9 @@ Spotify Tracker (every 5 min) → spotify_plays
 
 - `commands.py` — builds the home summary HTML; also the email command listener
 - `send_summary.py` — morning email entry point, logs to `send_summary.log` + `homebase_log`
+- `strain_checker.py` — thin reader over `guapa.strain_stock` (used by morning email)
+- `strain_sync.py` — collector: scrapes 12 NJ dispensaries (DispenseApp/Dutchie/Sweed), writes to `guapa.strain_stock`
+- `strain_sync_run.py` — entry point for the 6:30 AM scheduled task (calls `sync_crops_catalog()`)
 - `guapa_music.py` — parses guapa-data's DQ summary (coverage stats, editorial content, per-artist enrichment)
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
