@@ -15,9 +15,10 @@ PRE_GAME_WINDOW_MIN  = 120    # start considering games this many min before puc
 
 # Period handling
 SKIP_THIRD_PERIOD    = True
-THIRD_PERIOD_ELAPSED_MIN   = 85   # rough floor for "likely in 3rd" without /scores
-SCORES_ELAPSED_TRIGGER_MIN = 75   # don't pay for /scores until a game is this late
-SCORES_MIN_INTERVAL_MIN    = 30   # AND don't call /scores more than this often per cycle-run
+THIRD_PERIOD_ELAPSED_MIN   = 85   # rough floor for "likely in 3rd" if NHL API period is missing
+
+# /scores endpoint was retired 2026-04-21 — score + period now come from NHL
+# play-by-play (free, real-time). fetch_scores.py kept for reference but unused.
 
 # CF% (Corsi) thresholds for shot-share alerts (NHL API, free)
 CF_LOW_THRESHOLD       = 45   # favorite under this % → getting outplayed, alert

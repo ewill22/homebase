@@ -75,6 +75,7 @@ def get_corsi(nhl_game_id):
             away_cf += 1
     total = home_cf + away_cf
 
+    game_state = d.get("gameState")
     return {
         "home_cf": home_cf,
         "away_cf": away_cf,
@@ -83,9 +84,12 @@ def get_corsi(nhl_game_id):
         "total": total,
         "home_abbrev": d.get("homeTeam", {}).get("abbrev"),
         "away_abbrev": d.get("awayTeam", {}).get("abbrev"),
+        "home_score": d.get("homeTeam", {}).get("score"),
+        "away_score": d.get("awayTeam", {}).get("score"),
         "period": (d.get("periodDescriptor") or {}).get("number"),
         "clock": (d.get("clock") or {}).get("timeRemaining"),
-        "game_state": d.get("gameState"),
+        "game_state": game_state,
+        "final": game_state in ("OFF", "FINAL"),
     }
 
 

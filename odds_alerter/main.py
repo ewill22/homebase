@@ -20,14 +20,13 @@ if PARENT not in sys.path:
 from logger import log_event
 from .config import (
     POLL_INTERVAL_MIN, PRE_GAME_WINDOW_MIN, MONTHLY_API_BUDGET, BUDGET_WARN_AT,
-    SKIP_THIRD_PERIOD, THIRD_PERIOD_ELAPSED_MIN, SCORES_ELAPSED_TRIGGER_MIN,
+    SKIP_THIRD_PERIOD, THIRD_PERIOD_ELAPSED_MIN,
     ALERT_ONCE_PER_GAME, CF_LOW_THRESHOLD, CF_HIGH_THRESHOLD,
     CF_MIN_SAMPLE_ATTEMPTS,
 )
 from . import state, detect_flips, nhl_api
 from .fetch_events import get_events
 from .fetch_odds import get_slate_odds
-from .fetch_scores import get_slate_scores
 from .notify import (
     compose_flip_message, compose_cf_alert_message, compose_watch_status,
     send_flip_alert, NHL_TAGS,
@@ -131,34 +130,29 @@ def run(dry_run=False, verbose=True):
                   detail=f"{len(relevant)} in window, all alerted/final/pickem")
         return
 
-    # ---- 4. Decide whether to pull /scores this cycle ----
-    want_scores = False
+    # ---- 4. Pull score + period + Corsi from NHL play-by-play (free) ----
+    # Replaces the paid /scores endpoint. Real-time, no quota, so flip messages
+    # don't report stale "Tied 0-0" like they did 2026-04-20.
+    corsi_by_event = {}
     for (e, _g) in live_games:
-        elapsed = (now - e["commence_time_utc"]).total_seconds() / 60.0
-        if elapsed >= SCORES_ELAPSED_TRIGGER_MIN:
-            want_scores = True
-            break
-
-    scores = {}
-    if want_scores and not dry_run:
-        try:
-            scores = get_slate_scores()
-            log(f"  /scores: fetched {len(scores)} rows")
-        except Exception as exc:
-            log(f"  /scores failed: {exc} (continuing without period data)")
-            log_event("odds_alerter", status="error",
-                      message="scores_fetch_failed", detail=str(exc))
-
-    # Apply score data to state
-    for event_id, s in scores.items():
-        g = state.get_game(event_id)
+        g = state.get_game(e["event_id"])
         if not g:
             continue
-        elapsed = (now - g["commence_time"]).total_seconds() / 60.0
-        period = 3 if s.get("completed") else infer_period_from_elapsed(elapsed)
-        state.update_score(event_id, period,
-                           s.get("home_score"), s.get("away_score"),
-                           final=s.get("completed", False))
+        nhl_id = g.get("nhl_game_id")
+        if not nhl_id:
+            log(f"  {e['away']} @ {e['home']}: no nhl_game_id yet, CF% unavailable")
+            continue
+        c = nhl_api.get_corsi(nhl_id)
+        if not c:
+            log(f"  {e['away']} @ {e['home']}: play-by-play empty (game {nhl_id}), CF% unavailable")
+            continue
+        corsi_by_event[e["event_id"]] = c
+        if c.get("period") is not None:
+            state.update_score(
+                e["event_id"], c["period"],
+                c.get("home_score"), c.get("away_score"),
+                final=bool(c.get("final")),
+            )
 
     # ---- 5. Decide whether to call /odds ----
     # We call /odds if either need_opener has entries OR we have live games still pollable.
@@ -229,17 +223,8 @@ def run(dry_run=False, verbose=True):
         log(f"  opener captured: {e['away']} @ {e['home']}  "
             f"H={row['ml_home']} A={row['ml_away']} fav={fav}")
 
-    # ---- 8. Fetch CF% for every live game (NHL API, free) ----
-    corsi_by_event = {}
-    for (e, g) in pollable_live:
-        nhl_id = g.get("nhl_game_id")
-        if not nhl_id:
-            continue
-        c = nhl_api.get_corsi(nhl_id)
-        if c:
-            corsi_by_event[e["event_id"]] = c
-
     # ---- 9. Check for flips AND CF% threshold crossings on live games ----
+    # (CF% already fetched above in step 4 and cached in corsi_by_event)
     flip_alerts = []
     cf_alerts = []
     phone = os.getenv("ALERT_SMS_TO", "").strip()
