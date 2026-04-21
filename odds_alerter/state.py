@@ -130,6 +130,18 @@ def mark_alerted(event_id):
     conn.close()
 
 
+def mark_brief_sent(event_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE odds_games SET brief_sent_at=NOW() WHERE event_id=%s",
+        (event_id,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def save_nhl_game_id(event_id, nhl_game_id):
     conn = get_connection()
     cur = conn.cursor()

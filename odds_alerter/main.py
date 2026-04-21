@@ -24,13 +24,15 @@ from .config import (
     ALERT_ONCE_PER_GAME, CF_LOW_THRESHOLD, CF_HIGH_THRESHOLD,
     CF_MIN_SAMPLE_ATTEMPTS,
 )
-from . import state, detect_flips, nhl_api
+from . import state, detect_flips, nhl_api, nhl_pregame
 from .fetch_events import get_events
 from .fetch_odds import get_slate_odds
 from .notify import (
     compose_flip_message, compose_cf_alert_message, compose_watch_status,
     send_flip_alert, NHL_TAGS,
 )
+
+BRIEF_LEAD_MIN = 45   # send pregame brief when game is within this many min of start
 
 load_dotenv()
 
@@ -93,6 +95,39 @@ def run(dry_run=False, verbose=True):
             nhl_id = nhl_api.lookup_nhl_game_id(date_str, e["home"], e["away"])
             if nhl_id:
                 state.save_nhl_game_id(e["event_id"], nhl_id)
+
+    # ---- 1.5. Auto-brief: text pregame digest ~45 min before puck drop ----
+    # Free (NHL API only), idempotent via odds_games.brief_sent_at.
+    phone = os.getenv("ALERT_SMS_TO", "").strip()
+    for e in relevant:
+        mins_to_start = (e["commence_time_utc"] - now).total_seconds() / 60.0
+        if mins_to_start <= 0 or mins_to_start > BRIEF_LEAD_MIN:
+            continue
+        g = state.get_game(e["event_id"])
+        if not g or g.get("brief_sent_at"):
+            continue
+        nhl_id = g.get("nhl_game_id")
+        if not nhl_id:
+            continue
+        home_abbrev = NHL_TAGS.get(e["home"])
+        away_abbrev = NHL_TAGS.get(e["away"])
+        if not home_abbrev or not away_abbrev:
+            continue
+        date_str = e["commence_time_utc"].strftime("%Y-%m-%d")
+        try:
+            brief = nhl_pregame.build_brief(nhl_id, home_abbrev, away_abbrev, date_str)
+            msg = nhl_pregame.format_brief(brief, home_abbrev, away_abbrev)
+            if dry_run:
+                log(f"  DRY RUN brief: {away_abbrev} @ {home_abbrev} ({mins_to_start:.0f} min)")
+                continue
+            if phone:
+                send_flip_alert(phone, msg)
+            state.mark_brief_sent(e["event_id"])
+            log(f"  BRIEF SENT: {away_abbrev} @ {home_abbrev} ({mins_to_start:.0f} min to start)")
+        except Exception as exc:
+            log(f"  brief failed for {away_abbrev} @ {home_abbrev}: {exc}")
+            log_event("odds_alerter", status="error",
+                      message="brief_failed", detail=f"{e['event_id']}: {exc}")
 
     # ---- 2. Budget guard ----
     used = state.get_api_usage()
@@ -227,7 +262,6 @@ def run(dry_run=False, verbose=True):
     # (CF% already fetched above in step 4 and cached in corsi_by_event)
     flip_alerts = []
     cf_alerts = []
-    phone = os.getenv("ALERT_SMS_TO", "").strip()
 
     for (e, g) in pollable_live:
         row = odds.get(e["event_id"])
