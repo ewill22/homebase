@@ -41,10 +41,50 @@ def cmd_watch_team(team_abbrev):
     abbrev = team_abbrev.upper().strip()
     game = odds_state.find_event_today_by_team(abbrev, NHL_TAGS)
     if not game:
-        return f"no game found for {abbrev} today — check the abbrev or try later."
+        return f"no game found for {abbrev} today - check the abbrev or try later."
     odds_state.add_watch(game["event_id"], abbrev)
-    return (f"watching {abbrev} — {game['away']} @ {game['home']}. "
+    return (f"watching {abbrev} - {game['away']} @ {game['home']}. "
             f"you'll get a status pulse each cycle until the game ends.")
+
+
+def cmd_brief_team(team_abbrev):
+    """
+    Pregame snapshot from free NHL public API: likely starter + SV%/GAA,
+    rest days, last-10 form, playoff series state. No Odds API credits used.
+
+    Hits NHL /schedule directly (no odds_games dependency) so the command
+    works for West Coast games that aren't in the alerter's 2h window yet.
+    """
+    import requests
+    from datetime import date
+    from odds_alerter import nhl_pregame
+    abbrev = team_abbrev.upper().strip()
+    today = date.today().isoformat()
+    try:
+        r = requests.get(f"https://api-web.nhle.com/v1/schedule/{today}", timeout=10)
+        r.raise_for_status()
+        d = r.json()
+    except requests.RequestException:
+        return f"couldn't reach NHL API right now - try again in a minute."
+
+    target_game = None
+    for day in d.get("gameWeek", []):
+        if day.get("date") != today:
+            continue
+        for g in day.get("games", []):
+            home = (g.get("homeTeam") or {}).get("abbrev")
+            away = (g.get("awayTeam") or {}).get("abbrev")
+            if abbrev in (home, away):
+                target_game = g
+                break
+    if not target_game:
+        return f"no NHL game found for {abbrev} today - check the abbrev."
+
+    game_id = target_game.get("id")
+    home_abbrev = (target_game.get("homeTeam") or {}).get("abbrev")
+    away_abbrev = (target_game.get("awayTeam") or {}).get("abbrev")
+    brief = nhl_pregame.build_brief(game_id, home_abbrev, away_abbrev, today)
+    return nhl_pregame.format_brief(brief, home_abbrev, away_abbrev)
 
 def cmd_home_summary(user_id=1):
     from config import get_config
@@ -827,7 +867,23 @@ def check_and_respond():
 
         matched = False
 
-        # Dynamic "watch <team>" command — has to come first since it's parameterised
+        # Dynamic "watch <team>" and "brief <team>" — parameterised, dispatch first
+        if text.startswith("brief "):
+            team = text.split(None, 1)[1].strip()
+            response = cmd_brief_team(team)
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from logger import log_event
+            tz = ZoneInfo(get_config()["user"]["timezone"])
+            now = datetime.now(tz)
+            send_email(
+                subject="homebase | " + now.strftime("%a %b %d, %I:%M %p"),
+                body=response, to=reply_to,
+            )
+            log_event("command", message=f"brief_team → {reply_to}", detail=team)
+            conn.store(eid, "+FLAGS", "\\Seen")
+            continue
+
         if text.startswith("watch "):
             team = text.split(None, 1)[1].strip()
             response = cmd_watch_team(team)
