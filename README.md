@@ -56,6 +56,7 @@ Homebase never scrapes or collects raw data directly (except weather, Spotify pl
 | Homebase Spotify Tracker | Every 5 min | `spotify_tracker.py` | Active |
 | Homebase Commands | Every 5 min | `commands.py` | Active |
 | Guapa Apply Editorial Suggestions | Every 5 min | `guapa-site/scripts/apply-suggestions.py` | Active |
+| Homebase Odds Alerter | Every 15 min | `odds_alerter/main.py` | Active (NHL playoffs only) |
 
 All tasks run hidden (no console window popups):
 - Python-only tasks use `pythonw.exe` (windowless Python interpreter)
@@ -148,6 +149,7 @@ When active: runs every 5 minutes, checks inbox for unread emails from trusted s
 | "how are things at home" | Full home summary email |
 | "hows it going at home" | Full home summary email |
 | "whats up at home" | Full home summary email |
+| "watch PIT" (or any NHL 3-letter tag) | Activates per-cycle score + CF% pulse texts from the odds alerter until the game goes final |
 
 ---
 
@@ -231,6 +233,7 @@ homebase/
 ├── steps_sync.bat        # Task Scheduler wrapper for health_steps.py --sync
 ├── commands.py           # Email command listener + home summary builder
 ├── send_summary.py       # Morning email entry point (daily 7 AM)
+├── odds_alerter/         # NHL playoff flip detector (see odds_alerter/README.md)
 └── work/                 # Business/analytics files (leads_simple.sql etc.)
 ```
 
@@ -246,5 +249,9 @@ homebase/
 | `weather` | Historical weather readings per city |
 | `spotify_plays` | Every Spotify track play, with played_at in ET |
 | `homebase_log` | Structured event log (summary sends, sync runs, errors) |
+| `odds_games` | Per-event state: openers, current live odds, score, period, CF%, alerted flag |
+| `odds_api_usage` | Monthly credit counter against The Odds API 500/mo free tier |
+| `odds_flip_history` | Append-only log of every flip alert fired |
+| `odds_watch` | Active "watch TEAM" email-command subscriptions, per-cycle pulse state |
 
 Strain stock data lives in `guapa.strain_stock` — see `guapa-data/strains/` for full schema.

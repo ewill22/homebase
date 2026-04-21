@@ -36,6 +36,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 | Homebase Spotify Tracker | Every 5 min | `pythonw.exe spotify_tracker.py` | Active |
 | Homebase Commands | Every 5 min | `pythonw.exe commands.py` | Active |
 | Guapa Apply Editorial Suggestions | Every 5 min | `pythonw.exe apply-suggestions.py` | Active |
+| Homebase Odds Alerter | Every 15 min | `pythonw.exe -m odds_alerter.main` | Active |
 
 **Popup suppression:** Eric's PC uses PIN login (no Windows password), so "Run whether user is logged on or not" doesn't work. Instead:
 - Python-only tasks use `pythonw.exe` (windowless Python, drops stdout — OK if script logs to file/DB)
@@ -54,6 +55,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
 - `health_steps.py` — full step CLI; use `--import-xml` to backfill from Apple Health export
+- `odds_alerter/` — NHL playoff flip detector; texts via Google Fi SMS gateway when a pregame favorite's live moneyline crosses to positive. Enriches alerts with NHL CF% (Corsi shot share) via free `api-web.nhle.com`. Supports `watch <TAG>` email command for per-cycle score/CF% pulses. State in `odds_games`, `odds_api_usage`, `odds_flip_history`, `odds_watch`. 500-credit/mo budget on The Odds API — see `odds_alerter/README.md`.
 
 ## Email Layout Order
 

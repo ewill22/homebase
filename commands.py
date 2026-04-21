@@ -30,6 +30,22 @@ COMMANDS = {
     "whats up at home": "cmd_home_summary",
 }
 
+
+def cmd_watch_team(team_abbrev):
+    """
+    Mark today's game involving team_abbrev as 'watched' — odds_alerter sends
+    a CF%/score pulse every poll cycle until the game ends.
+    """
+    from odds_alerter import state as odds_state
+    from odds_alerter.notify import NHL_TAGS
+    abbrev = team_abbrev.upper().strip()
+    game = odds_state.find_event_today_by_team(abbrev, NHL_TAGS)
+    if not game:
+        return f"no game found for {abbrev} today — check the abbrev or try later."
+    odds_state.add_watch(game["event_id"], abbrev)
+    return (f"watching {abbrev} — {game['away']} @ {game['home']}. "
+            f"you'll get a status pulse each cycle until the game ends.")
+
 def cmd_home_summary(user_id=1):
     from config import get_config
     cfg  = get_config(user_id)
@@ -810,6 +826,23 @@ def check_and_respond():
         text = subject or body
 
         matched = False
+
+        # Dynamic "watch <team>" command — has to come first since it's parameterised
+        if text.startswith("watch "):
+            team = text.split(None, 1)[1].strip()
+            response = cmd_watch_team(team)
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from logger import log_event
+            now = datetime.now(ZoneInfo("America/New_York"))
+            send_email(
+                subject="homebase | " + now.strftime("%a %b %d, %I:%M %p"),
+                body=response, to=reply_to,
+            )
+            log_event("command", message=f"watch_team → {reply_to}", detail=team)
+            conn.store(eid, "+FLAGS", "\\Seen")
+            continue
+
         for trigger, func_name in COMMANDS.items():
             if trigger in text:
                 response = globals()[func_name]()
@@ -858,8 +891,8 @@ def check_guapa_suggestions():
 
     print(f"Found {len(ids)} unread Formspree email(s) — running apply-suggestions...")
     result = subprocess.run(
-        ["python", r"C:\Users\eewil\guapa\guapa-site\guapa-site\scripts\apply-suggestions.py"],
-        cwd=r"C:\Users\eewil\guapa\guapa-site\guapa-site",
+        ["python", r"C:\Users\eewil\guapa\guapa-site\scripts\apply-suggestions.py"],
+        cwd=r"C:\Users\eewil\guapa\guapa-site",
         capture_output=True, text=True
     )
     print(result.stdout)
