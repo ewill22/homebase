@@ -9,7 +9,16 @@ import os
 import sys
 import argparse
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+
+ET = ZoneInfo("America/New_York")
+
+
+def nhl_date_str(utc_dt):
+    """NHL /schedule files games under their Eastern date, not UTC.
+    A 10 PM ET game (02:00 UTC next day) is filed under the ET calendar day."""
+    return utc_dt.replace(tzinfo=timezone.utc).astimezone(ET).strftime("%Y-%m-%d")
 
 # Parent dir (homebase) on path so we can import db.py, emailer.py, logger.py
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -91,7 +100,7 @@ def run(dry_run=False, verbose=True):
         # Map to NHL gameId once — /schedule is free
         g = state.get_game(e["event_id"])
         if g and g.get("nhl_game_id") is None:
-            date_str = e["commence_time_utc"].strftime("%Y-%m-%d")
+            date_str = nhl_date_str(e["commence_time_utc"])
             nhl_id = nhl_api.lookup_nhl_game_id(date_str, e["home"], e["away"])
             if nhl_id:
                 state.save_nhl_game_id(e["event_id"], nhl_id)
@@ -113,7 +122,7 @@ def run(dry_run=False, verbose=True):
         away_abbrev = NHL_TAGS.get(e["away"])
         if not home_abbrev or not away_abbrev:
             continue
-        date_str = e["commence_time_utc"].strftime("%Y-%m-%d")
+        date_str = nhl_date_str(e["commence_time_utc"])
         try:
             brief = nhl_pregame.build_brief(nhl_id, home_abbrev, away_abbrev, date_str)
             msg = nhl_pregame.format_brief(brief, home_abbrev, away_abbrev)
