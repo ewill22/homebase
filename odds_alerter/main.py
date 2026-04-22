@@ -73,10 +73,10 @@ def run(dry_run=False, verbose=True):
     now = utcnow()
     log = print if verbose else (lambda *a, **k: None)
 
-    # ---- 0. Quiet hours: 11 PM – 2 PM ET ----
+    # ---- 0. Quiet hours: midnight – 2 PM ET ----
     # Don't text when Eric's asleep and no point polling pre-slate.
     et_hour = datetime.now().hour
-    if et_hour >= 23 or et_hour < 14:
+    if et_hour < 14:
         log(f"  quiet hours (ET {et_hour}:00) — no-op")
         log_event("odds_alerter", message="quiet_hours", detail=f"ET hour={et_hour}")
         return
