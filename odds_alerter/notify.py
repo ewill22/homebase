@@ -138,27 +138,10 @@ def compose_watch_status(team_abbrev, opp_abbrev, cf_pct, home_score,
 
 
 def send_flip_alert(phone_number, message):
-    """
-    Sends to Google Fi SMS gateway + backup to ewill22@gmail.com.
-    Returns True on SMS attempt, False on failure (email backup still attempts).
-    """
+    """SMS-only via Google Fi gateway. Returns True on success, False on failure."""
     sms_to = f"{phone_number}@{SMS_GATEWAY_DOMAIN}"
-    sms_ok = False
     try:
-        # Blank subject - some gateways prepend subject to body
         send_email(subject="", body=message, to=sms_to)
-        sms_ok = True
+        return True
     except Exception:
-        pass
-
-    # Always send a backup email so a missed SMS is recoverable
-    try:
-        send_email(
-            subject="odds alert",
-            body=message,
-            to=BACKUP_EMAIL,
-        )
-    except Exception:
-        pass
-
-    return sms_ok
+        return False
