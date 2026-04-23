@@ -7,9 +7,11 @@ puck drop (goalies, rest, form, series state), so he can combine the
 data with his eye test instead of dog-chasing plus-money numbers.
 """
 import requests
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 NHL_BASE = "https://api-web.nhle.com/v1"
+ET = ZoneInfo("America/New_York")
 
 
 def _get(path):
@@ -176,9 +178,28 @@ def get_rest_days(team_abbrev, game_date_str):
     return (rest, rest <= 1)
 
 
+def get_start_time_et(game_id):
+    """ET puck-drop like '7:10p'; None if unknown."""
+    d = _get(f"/gamecenter/{game_id}/landing")
+    if not d:
+        return None
+    iso = d.get("startTimeUTC")
+    if not iso:
+        return None
+    try:
+        utc = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        et = utc.astimezone(ET)
+        h12 = et.strftime("%I").lstrip("0") or "12"
+        suf = "a" if et.hour < 12 else "p"
+        return f"{h12}:{et.strftime('%M')}{suf}"
+    except ValueError:
+        return None
+
+
 def build_brief(game_id, home_abbrev, away_abbrev, game_date_str):
     """Assemble the full pregame snapshot for one game."""
     return {
+        "start_et": get_start_time_et(game_id),
         "goalies": get_likely_starters(game_id) or {},
         "series": get_series_state(game_id),
         "home_form": get_recent_form(home_abbrev, before_date=game_date_str),
@@ -190,7 +211,10 @@ def build_brief(game_id, home_abbrev, away_abbrev, game_date_str):
 
 def format_brief(brief, home_abbrev, away_abbrev):
     """ASCII-safe SMS digest. Targets ~320 chars so Fi gateway delivers cleanly."""
-    lines = [f"{away_abbrev} @ {home_abbrev}"]
+    header = f"{away_abbrev} @ {home_abbrev}"
+    if brief.get("start_et"):
+        header += f" {brief['start_et']} ET"
+    lines = [header]
 
     s = brief.get("series")
     if s and s.get("leader"):
