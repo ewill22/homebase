@@ -278,22 +278,20 @@ def run(dry_run=False, verbose=True):
             continue
         state.update_current_odds(e["event_id"], row["ml_home"], row["ml_away"])
 
-        fav = g.get("opening_favorite")
-        if not fav:
-            continue
-
         corsi = corsi_by_event.get(e["event_id"])
-        fav_cf = nhl_api.favorite_cf_pct(corsi, fav) if corsi else None
         attempts = corsi["total"] if corsi else 0
 
-        # Persist latest CF% snapshot
+        # Persist CF% snapshot for every live game (pick-'ems included)
         if corsi:
             state.update_cf(e["event_id"], corsi["home_cf_pct"],
                             corsi["away_cf_pct"], attempts)
 
-        # --- Flip check ---
-        if detect_flips.is_flip(fav, row["ml_home"], row["ml_away"]):
+        fav = g.get("opening_favorite")
+
+        # --- Flip check (requires an identified pregame favorite) ---
+        if fav and detect_flips.is_flip(fav, row["ml_home"], row["ml_away"]):
             g2 = state.get_game(e["event_id"]) or g
+            fav_cf = nhl_api.favorite_cf_pct(corsi, fav) if corsi else None
             opener_ml = (g.get("opening_ml_home") if fav == "home"
                          else g.get("opening_ml_away"))
             current_ml = row["ml_home"] if fav == "home" else row["ml_away"]
@@ -316,38 +314,47 @@ def run(dry_run=False, verbose=True):
                 "period": g2.get("period"), "message": msg,
             })
 
-        # --- CF% threshold check (independent of flip) ---
-        if (fav_cf is not None and attempts >= CF_MIN_SAMPLE_ATTEMPTS
-                and not g.get("alerted")):
-            prev_dir = g.get("last_cf_alert_dir")
+        # --- CF% threshold check (fires regardless of favorite status) ---
+        if not corsi or attempts < CF_MIN_SAMPLE_ATTEMPTS or g.get("alerted"):
+            continue
+        prev_dir = g.get("last_cf_alert_dir")
+        home_cf = corsi["home_cf_pct"]
+        away_cf = corsi["away_cf_pct"]
+        g2 = state.get_game(e["event_id"]) or g
+
+        def _make_cf_alert(team_side, direction, cf_pct):
+            team_name = e["home"] if team_side == "home" else e["away"]
+            return {
+                "event_id": e["event_id"], "dir": direction,
+                "cf_pct": cf_pct, "attempts": attempts,
+                "message": compose_cf_alert_message(
+                    fav_team=team_name, direction=direction, cf_pct=cf_pct,
+                    home=e["home"], away=e["away"],
+                    home_score=g2.get("home_score"),
+                    away_score=g2.get("away_score"),
+                    period=g2.get("period"),
+                ),
+            }
+
+        if fav:
+            fav_cf = home_cf if fav == "home" else away_cf
             if fav_cf < CF_LOW_THRESHOLD and prev_dir != "below":
-                g2 = state.get_game(e["event_id"]) or g
-                fav_team = e["home"] if fav == "home" else e["away"]
-                cf_msg = compose_cf_alert_message(
-                    fav_team=fav_team, direction="below", cf_pct=fav_cf,
-                    home=e["home"], away=e["away"],
-                    home_score=g2.get("home_score"),
-                    away_score=g2.get("away_score"),
-                    period=g2.get("period"),
-                )
-                cf_alerts.append({"event_id": e["event_id"], "dir": "below",
-                                  "cf_pct": fav_cf, "message": cf_msg,
-                                  "attempts": attempts})
+                cf_alerts.append(_make_cf_alert(fav, "below", fav_cf))
             elif fav_cf > CF_HIGH_THRESHOLD and prev_dir != "above":
-                g2 = state.get_game(e["event_id"]) or g
-                fav_team = e["home"] if fav == "home" else e["away"]
-                cf_msg = compose_cf_alert_message(
-                    fav_team=fav_team, direction="above", cf_pct=fav_cf,
-                    home=e["home"], away=e["away"],
-                    home_score=g2.get("home_score"),
-                    away_score=g2.get("away_score"),
-                    period=g2.get("period"),
-                )
-                cf_alerts.append({"event_id": e["event_id"], "dir": "above",
-                                  "cf_pct": fav_cf, "message": cf_msg,
-                                  "attempts": attempts})
+                cf_alerts.append(_make_cf_alert(fav, "above", fav_cf))
             elif CF_LOW_THRESHOLD <= fav_cf <= CF_HIGH_THRESHOLD and prev_dir is not None:
-                # Game normalized — reset so next swing can re-alert
+                state.reset_cf_alert_dir(e["event_id"])
+        else:
+            # Pick-'em — alert whichever side is dominating (>55); if neither
+            # is, treat as game normalized and reset prior dedup.
+            dominant = None
+            if home_cf > CF_HIGH_THRESHOLD:
+                dominant = ("home", home_cf)
+            elif away_cf > CF_HIGH_THRESHOLD:
+                dominant = ("away", away_cf)
+            if dominant and prev_dir != "above":
+                cf_alerts.append(_make_cf_alert(dominant[0], "above", dominant[1]))
+            elif (not dominant) and prev_dir is not None:
                 state.reset_cf_alert_dir(e["event_id"])
 
     # ---- 10. Send flip alerts (one per game max) ----
