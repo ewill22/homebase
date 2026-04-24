@@ -533,7 +533,7 @@ def log_stock(matches):
         brand = m.get("brand")
         crops_grower = 1 if brand and brand.upper() == "CROPS" else 0
         cur.execute("""
-            INSERT INTO strain_stock (
+            INSERT INTO guapa.strain_stock (
                 checked_at, dispensary, strain_name, brand, product_name, category,
                 price, in_stock, menu_url, product_image,
                 listed_at, package_id,
@@ -605,8 +605,9 @@ def sync_crops_catalog():
 
     try:
         log_stock(deduped)
-    except Exception:
-        pass
+    except Exception as e:
+        import traceback
+        print(f"log_stock failed: {e}\n{traceback.format_exc()}")
     return deduped
 
 
@@ -617,7 +618,7 @@ def _last_package_id(dispensary, strain_name):
         conn = get_connection()
         cur  = conn.cursor()
         cur.execute("""
-            SELECT package_id FROM strain_stock
+            SELECT package_id FROM guapa.strain_stock
             WHERE dispensary = %s AND strain_name = %s AND package_id IS NOT NULL
             ORDER BY checked_at DESC LIMIT 1
         """, (dispensary, strain_name))
@@ -651,8 +652,9 @@ def get_strain_stock(strain=DEFAULT_STRAIN):
             deduped.append(m)
     try:
         log_stock(deduped)
-    except Exception:
-        pass
+    except Exception as e:
+        import traceback
+        print(f"log_stock failed: {e}\n{traceback.format_exc()}")
     return deduped
 
 
