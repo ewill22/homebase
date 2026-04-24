@@ -94,6 +94,24 @@ def get_terpene_matched_stocks(exclude=None):
     return results
 
 
+def get_data_age_hours():
+    """Hours since the most recent strain_stock write. None if table empty.
+    Used by the morning email to detect a broken sync and warn instead of
+    silently showing stale data."""
+    from db import get_connection
+    from datetime import datetime
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(checked_at) FROM guapa.strain_stock")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    latest = row[0] if row else None
+    if not latest:
+        return None
+    return (datetime.now() - latest).total_seconds() / 3600
+
+
 def get_all_strain_hits():
     """
     Fetch all tracked strains + any terpene-matched Crops strains in stock.

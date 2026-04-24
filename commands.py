@@ -11,7 +11,7 @@ from emailer import send_email
 from weather import fetch_and_store, fetch_all
 from gcal import get_upcoming_events, get_devils_games
 from spotify import get_weekly_listens, get_monthly_recap
-from strain_checker import get_all_strain_hits, TRACKED_STRAINS
+from strain_checker import get_all_strain_hits, TRACKED_STRAINS, get_data_age_hours
 from steps import get_steps_yesterday, get_daily_target, MONTHLY_GOAL as STEPS_MONTHLY_GOAL
 from guapa_music import get_music_summary
 from datetime import datetime, timezone
@@ -482,6 +482,19 @@ def cmd_home_summary(user_id=1):
     # — Strain section —
     import urllib.parse
     strain_section = ""
+    # Staleness guard: sync runs daily at 6:30 AM. If most recent write is
+    # >36h old, sync is broken — warn loudly instead of showing stale data.
+    data_age = get_data_age_hours()
+    stale_banner = ""
+    if data_age is not None and data_age > 36:
+        days_stale = int(data_age / 24)
+        stale_banner = (
+            '<hr style="border:none;border-top:1px solid #f2f2f7;margin:0 0 32px;">'
+            '<div style="background:#3a1f1f;border-left:4px solid #ff887c;padding:12px 16px;margin-bottom:32px;border-radius:4px;">'
+            '<p style="font-size:12px;font-weight:600;color:#ff887c;margin:0 0 4px;">STRAIN SYNC STALE</p>'
+            f'<p style="font-size:13px;color:#d1d5db;margin:0;">Last update {days_stale}d ago &mdash; daily sync may be broken. Stock data below (if any) is outdated.</p>'
+            '</div>'
+        )
     if strain_hits is not None:
         if strain_hits:
             hit_rows = ""
@@ -520,6 +533,8 @@ def cmd_home_summary(user_id=1):
                 f'<p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#aeaeb2;margin:0 0 4px;">In Stock</p>'
                 f'<p style="font-size:13px;color:#aeaeb2;margin:0 0 40px;">{safe(tracked_str)} &mdash; not in stock today.</p>'
             )
+    if stale_banner:
+        strain_section = stale_banner + strain_section
 
     # — Guapa Music section —
     music_section = ""
