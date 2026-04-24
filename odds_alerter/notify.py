@@ -99,27 +99,39 @@ def compose_cf_alert_message(fav_team, direction, cf_pct, home, away,
                              home_score, away_score, period):
     """
     Fired on CF% threshold crossing - no flip required.
-    'PIT is being outplayed - 38% shot share, 2nd period, tied 1-1'
+    Three flavors:
+      BUY DOG — dominating team is also trailing (value on their ML)
+      FADE    — team being outplayed (sell or stay away)
+      confirm — dominating + leading/tied (just info)
+    'BUY DOG: LAK dominating 57% but down 1-0, 1st - ML has value'
+    'OTT being outplayed 44%, down 1-0, 1st - fade signal'
     """
     tag = _team_tag(fav_team)
-    head = ("is being outplayed" if direction == "below"
-            else "is dominating")
     period_s = {1: "1st", 2: "2nd", 3: "3rd"}.get(period, "")
 
+    score_state = None   # 'down' | 'up' | 'tied' | None
+    score_str = ""
     if home_score is not None and away_score is not None:
         if fav_team == home:
-            fav_score, opp_score = home_score, away_score
+            my_score, opp_score = home_score, away_score
         else:
-            fav_score, opp_score = away_score, home_score
-        score_bit = (f"down {opp_score}-{fav_score}" if opp_score > fav_score
-                     else f"up {fav_score}-{opp_score}" if fav_score > opp_score
-                     else f"tied {fav_score}-{opp_score}")
-    else:
-        score_bit = ""
+            my_score, opp_score = away_score, home_score
+        if opp_score > my_score:
+            score_state = "down"; score_str = f"down {opp_score}-{my_score}"
+        elif my_score > opp_score:
+            score_state = "up"; score_str = f"up {my_score}-{opp_score}"
+        else:
+            score_state = "tied"; score_str = f"tied {my_score}-{opp_score}"
 
-    tail_bits = [b for b in (period_s, score_bit) if b]
+    tail_bits = [b for b in (period_s, score_str) if b]
     tail = (", " + ", ".join(tail_bits)) if tail_bits else ""
-    return f"{tag} {head} - {cf_pct:.0f}% shot share{tail}"
+
+    if direction == "above" and score_state == "down":
+        return f"BUY DOG: {tag} dominating {cf_pct:.0f}%{tail} - ML has value"
+    if direction == "below":
+        return f"FADE {tag}: being outplayed {cf_pct:.0f}%{tail}"
+    # dominating + leading/tied: informational
+    return f"{tag} dominating {cf_pct:.0f}%{tail}"
 
 
 def compose_watch_status(team_abbrev, opp_abbrev, cf_pct, home_score,
