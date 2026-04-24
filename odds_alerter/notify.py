@@ -137,6 +137,21 @@ def compose_watch_status(team_abbrev, opp_abbrev, cf_pct, home_score,
     return " | ".join(parts)
 
 
+def compose_lock_message(flipped_team, flip_ml, hedge_team, hedge_ml,
+                         hedge_ratio, profit_pct):
+    """
+    'LOCK: BUF +135 earlier -> BOS now +275. Bet 67% of your BUF stake
+     on BOS for guaranteed +32%.'
+    """
+    flip_tag = _team_tag(flipped_team)
+    hedge_tag = _team_tag(hedge_team)
+    flip_s = f"+{flip_ml}" if flip_ml > 0 else str(flip_ml)
+    hedge_s = f"+{hedge_ml}" if hedge_ml > 0 else str(hedge_ml)
+    return (f"LOCK: {flip_tag} {flip_s} earlier -> {hedge_tag} now {hedge_s}. "
+            f"Bet {hedge_ratio:.0%} of your {flip_tag} stake on {hedge_tag} "
+            f"for guaranteed +{profit_pct:.0%}.")
+
+
 def send_flip_alert(phone_number, message):
     """SMS-only via Google Fi gateway. Returns True on success, False on failure."""
     sms_to = f"{phone_number}@{SMS_GATEWAY_DOMAIN}"

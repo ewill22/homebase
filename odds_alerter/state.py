@@ -118,16 +118,52 @@ def update_score(event_id, period, home_score, away_score, final=False):
     conn.close()
 
 
-def mark_alerted(event_id):
+def mark_alerted(event_id, flip_ml=None):
+    """Mark the flip SMS as sent. flip_ml = the ML of the flipped team
+    at alert time — what we assume Eric bet at."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE odds_games SET alerted=TRUE, alerted_at=NOW() WHERE event_id=%s",
+        """UPDATE odds_games SET alerted=TRUE, alerted_at=NOW(), flip_ml=%s
+            WHERE event_id=%s""",
+        (flip_ml, event_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def mark_lock_alerted(event_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE odds_games SET lock_alerted_at=NOW() WHERE event_id=%s",
         (event_id,),
     )
     conn.commit()
     cur.close()
     conn.close()
+
+
+def get_lock_candidates():
+    """Games where we fired a flip alert, haven't sent a lock alert yet,
+    and game isn't final — these are candidates to check this cycle."""
+    conn = get_connection()
+    cur = conn.cursor(dictionary=True)
+    cur.execute(
+        """SELECT event_id, home, away, opening_favorite, flip_ml,
+                  current_ml_home, current_ml_away, home_score, away_score,
+                  period, nhl_game_id
+             FROM odds_games
+            WHERE alerted = TRUE
+              AND flip_ml IS NOT NULL
+              AND lock_alerted_at IS NULL
+              AND final = FALSE"""
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
 
 
 def mark_brief_sent(event_id):

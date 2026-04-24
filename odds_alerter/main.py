@@ -38,8 +38,11 @@ from .fetch_events import get_events
 from .fetch_odds import get_slate_odds
 from .notify import (
     compose_flip_message, compose_cf_alert_message, compose_watch_status,
-    send_flip_alert, NHL_TAGS,
+    compose_lock_message, send_flip_alert, NHL_TAGS,
 )
+
+# Minimum guaranteed ROI to bother texting. 5% = clear edge after friction.
+LOCK_MIN_PROFIT_PCT = 0.05
 
 BRIEF_LEAD_MIN = 45   # send pregame brief when game is within this many min of start
 
@@ -360,7 +363,7 @@ def run(dry_run=False, verbose=True):
     # ---- 10. Send flip alerts (one per game max) ----
     for a in flip_alerts:
         sms_ok = send_flip_alert(phone, a["message"])
-        state.mark_alerted(a["event_id"])
+        state.mark_alerted(a["event_id"], flip_ml=a["current_ml"])
         state.log_flip(
             event_id=a["event_id"], favorite_side=a["favorite_side"],
             favorite_team=a["favorite_team"], opening_ml=a["opener_ml"],
@@ -379,6 +382,45 @@ def run(dry_run=False, verbose=True):
                             corsi["away_cf_pct"], corsi["total"],
                             alert_dir=a["dir"])
         log(f"  CF ALERT SENT (sms={sms_ok}): {a['message']}")
+
+    # ---- 11.5. Scan for lock/arb opportunities on flipped games ----
+    # Assumes you bet the flipped team at the alerted ML. If the opposite
+    # side's live ML has since moved to a price where hedging creates
+    # guaranteed profit, text once.
+    for lc in state.get_lock_candidates():
+        flipped_side = lc["opening_favorite"]
+        if flipped_side not in ("home", "away"):
+            continue
+        flip_ml = lc["flip_ml"]
+        opp_ml = (lc["current_ml_away"] if flipped_side == "home"
+                  else lc["current_ml_home"])
+        if flip_ml is None or opp_ml is None:
+            continue
+        # Arb condition: sum of implied probs < 1
+        # implied_prob(+N) = 100 / (N + 100); implied_prob(-N) = N / (N + 100)
+        def _imp(ml):
+            return 100 / (ml + 100) if ml > 0 else (-ml) / (-ml + 100)
+        prob_sum = _imp(flip_ml) + _imp(opp_ml)
+        if prob_sum >= 1.0:
+            continue
+        # Hedge math: for $1 staked on flipped team at flip_ml
+        #   payout_A = 1 + flip_ml/100  (if flip_ml > 0)  or 1 + 100/|flip_ml|  (if negative)
+        payout_unit = (1 + flip_ml / 100.0) if flip_ml > 0 else (1 + 100.0 / -flip_ml)
+        hedge_stake = payout_unit / ((1 + opp_ml / 100.0) if opp_ml > 0 else (1 + 100.0 / -opp_ml))
+        total_stake = 1 + hedge_stake
+        profit_pct = (payout_unit - total_stake) / total_stake
+        if profit_pct < LOCK_MIN_PROFIT_PCT:
+            continue
+        flipped_team = lc["home"] if flipped_side == "home" else lc["away"]
+        hedge_team = lc["away"] if flipped_side == "home" else lc["home"]
+        msg = compose_lock_message(
+            flipped_team=flipped_team, flip_ml=flip_ml,
+            hedge_team=hedge_team, hedge_ml=opp_ml,
+            hedge_ratio=hedge_stake, profit_pct=profit_pct,
+        )
+        sms_ok = send_flip_alert(phone, msg)
+        state.mark_lock_alerted(lc["event_id"])
+        log(f"  LOCK ALERT SENT (sms={sms_ok}): {msg}")
 
     # ---- 12. Watch command updates ----
     watches = state.get_active_watches()
