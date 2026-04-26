@@ -295,6 +295,8 @@ def run(dry_run=False, verbose=True):
         if fav and detect_flips.is_flip(fav, row["ml_home"], row["ml_away"]):
             g2 = state.get_game(e["event_id"]) or g
             fav_cf = nhl_api.favorite_cf_pct(corsi, fav) if corsi else None
+            fav_hd = nhl_api.favorite_hd_pct(corsi, fav) if corsi else None
+            fav_adj = nhl_api.favorite_adj_cf_pct(corsi, fav) if corsi else None
             opener_ml = (g.get("opening_ml_home") if fav == "home"
                          else g.get("opening_ml_away"))
             current_ml = row["ml_home"] if fav == "home" else row["ml_away"]
@@ -306,7 +308,7 @@ def run(dry_run=False, verbose=True):
                 home_score=g2.get("home_score"),
                 away_score=g2.get("away_score"),
                 period=g2.get("period"),
-                fav_cf_pct=fav_cf,
+                fav_cf_pct=fav_cf, fav_hd_pct=fav_hd, fav_adj_cf_pct=fav_adj,
             )
             flip_alerts.append({
                 "event_id": e["event_id"], "favorite_side": fav,
@@ -327,6 +329,10 @@ def run(dry_run=False, verbose=True):
 
         def _make_cf_alert(team_side, direction, cf_pct):
             team_name = e["home"] if team_side == "home" else e["away"]
+            hd_pct = (corsi["home_hd_pct"] if team_side == "home"
+                      else corsi["away_hd_pct"]) if corsi.get("hd_total") else None
+            adj_pct = (corsi["home_adj_pct"] if team_side == "home"
+                       else corsi["away_adj_pct"])
             return {
                 "event_id": e["event_id"], "dir": direction,
                 "cf_pct": cf_pct, "attempts": attempts,
@@ -336,6 +342,7 @@ def run(dry_run=False, verbose=True):
                     home_score=g2.get("home_score"),
                     away_score=g2.get("away_score"),
                     period=g2.get("period"),
+                    hd_pct=hd_pct, adj_cf_pct=adj_pct,
                 ),
             }
 
@@ -437,9 +444,12 @@ def run(dry_run=False, verbose=True):
         team_is_home = (team_abbrev == corsi["home_abbrev"])
         opp_abbrev = corsi["away_abbrev"] if team_is_home else corsi["home_abbrev"]
         cf_pct = corsi["home_cf_pct"] if team_is_home else corsi["away_cf_pct"]
+        hd_pct = ((corsi["home_hd_pct"] if team_is_home else corsi["away_hd_pct"])
+                  if corsi.get("hd_total") else None)
+        adj_pct = corsi["home_adj_pct"] if team_is_home else corsi["away_adj_pct"]
         msg = compose_watch_status(
             team_abbrev=team_abbrev, opp_abbrev=opp_abbrev,
-            cf_pct=cf_pct,
+            cf_pct=cf_pct, hd_pct=hd_pct, adj_cf_pct=adj_pct,
             home_score=g_current.get("home_score"),
             away_score=g_current.get("away_score"),
             period=g_current.get("period"),

@@ -56,12 +56,35 @@ def _team_tag(team):
     return parts[-1][:3].upper()
 
 
+def _shot_metrics_str(cf_pct, hd_pct=None, adj_cf_pct=None):
+    """Compact triangulation string: '38% atts (HD 42, adj 35)'."""
+    if cf_pct is None:
+        return ""
+    extras = []
+    if hd_pct is not None:
+        extras.append(f"HD {hd_pct:.0f}%")
+    if adj_cf_pct is not None:
+        extras.append(f"adj {adj_cf_pct:.0f}%")
+    extras_s = f" ({', '.join(extras)})" if extras else ""
+    return f"{cf_pct:.0f}% atts{extras_s}"
+
+
+def _read_for_pct(pct):
+    """Plain-English read for a shot-attempt %."""
+    if pct < 45:
+        return "getting outplayed"
+    if pct > 55:
+        return "dominating"
+    return "game is even"
+
+
 def compose_flip_message(fav_team, opener_ml, current_ml,
                          home, away, home_score, away_score, period,
-                         fav_cf_pct=None):
+                         fav_cf_pct=None, fav_hd_pct=None, fav_adj_cf_pct=None):
     """
     Format: 'you watching this? favorite just got scored on, PIT opened -142,
-            now +108 live. Down 1-0 2nd. PIT 38% shot share - getting outplayed'
+            now +108 live. Down 1-0 2nd. PIT 38% atts (HD 42, adj 35) -
+            getting outplayed'
     Stays under ~300 chars so Google Fi gateway delivers cleanly.
     """
     tag = _team_tag(fav_team)
@@ -87,24 +110,25 @@ def compose_flip_message(fav_team, opener_ml, current_ml,
            f"{tag} opened {opener_s}, now {current_s} live{context}")
 
     if fav_cf_pct is not None:
-        read = ("getting outplayed" if fav_cf_pct < 45
-                else "dominating" if fav_cf_pct > 55
-                else "game is even")
-        msg += f". {tag} {fav_cf_pct:.0f}% shot share - {read}"
+        # Read off score-adjusted CF when available (better signal); else raw
+        read_pct = fav_adj_cf_pct if fav_adj_cf_pct is not None else fav_cf_pct
+        metrics = _shot_metrics_str(fav_cf_pct, fav_hd_pct, fav_adj_cf_pct)
+        msg += f". {tag} {metrics} - {_read_for_pct(read_pct)}"
 
     return msg
 
 
 def compose_cf_alert_message(fav_team, direction, cf_pct, home, away,
-                             home_score, away_score, period):
+                             home_score, away_score, period,
+                             hd_pct=None, adj_cf_pct=None):
     """
     Fired on CF% threshold crossing - no flip required.
     Three flavors:
       BUY DOG — dominating team is also trailing (value on their ML)
       FADE    — team being outplayed (sell or stay away)
       confirm — dominating + leading/tied (just info)
-    'BUY DOG: LAK dominating 57% but down 1-0, 1st - ML has value'
-    'OTT being outplayed 44%, down 1-0, 1st - fade signal'
+    'BUY DOG: LAK dominating 57% atts (HD 62, adj 60), down 1-0, 1st - ML has value'
+    'FADE OTT: being outplayed 44% atts (HD 38, adj 40), down 1-0, 1st'
     """
     tag = _team_tag(fav_team)
     period_s = {1: "1st", 2: "2nd", 3: "3rd"}.get(period, "")
@@ -125,17 +149,19 @@ def compose_cf_alert_message(fav_team, direction, cf_pct, home, away,
 
     tail_bits = [b for b in (period_s, score_str) if b]
     tail = (", " + ", ".join(tail_bits)) if tail_bits else ""
+    metrics = _shot_metrics_str(cf_pct, hd_pct, adj_cf_pct)
 
     if direction == "above" and score_state == "down":
-        return f"BUY DOG: {tag} dominating {cf_pct:.0f}%{tail} - ML has value"
+        return f"BUY DOG: {tag} dominating {metrics}{tail} - ML has value"
     if direction == "below":
-        return f"FADE {tag}: being outplayed {cf_pct:.0f}%{tail}"
+        return f"FADE {tag}: being outplayed {metrics}{tail}"
     # dominating + leading/tied: informational
-    return f"{tag} dominating {cf_pct:.0f}%{tail}"
+    return f"{tag} dominating {metrics}{tail}"
 
 
 def compose_watch_status(team_abbrev, opp_abbrev, cf_pct, home_score,
-                         away_score, period, team_is_home):
+                         away_score, period, team_is_home,
+                         hd_pct=None, adj_cf_pct=None):
     """Per-cycle pulse for 'watch XXX' command."""
     period_s = {1: "1st", 2: "2nd", 3: "3rd", 4: "OT"}.get(period, "")
     if home_score is not None and away_score is not None:
@@ -144,8 +170,10 @@ def compose_watch_status(team_abbrev, opp_abbrev, cf_pct, home_score,
         score_bit = f"{team_abbrev} {my_score} {opp_abbrev} {opp_score}"
     else:
         score_bit = f"{team_abbrev} vs {opp_abbrev}"
-    cf_bit = f"{cf_pct:.0f}% shots" if cf_pct is not None else ""
-    parts = [b for b in (score_bit, period_s, cf_bit) if b]
+    cf_bit = f"{cf_pct:.0f}% atts" if cf_pct is not None else ""
+    hd_bit = f"HD {hd_pct:.0f}%" if hd_pct is not None else ""
+    adj_bit = f"adj {adj_cf_pct:.0f}%" if adj_cf_pct is not None else ""
+    parts = [b for b in (score_bit, period_s, cf_bit, hd_bit, adj_bit) if b]
     return " | ".join(parts)
 
 
