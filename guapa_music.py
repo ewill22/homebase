@@ -29,8 +29,20 @@ def get_music_summary():
         m = re.search(pattern, text)
         return int(m.group(1)) if m else None
 
-    def find_coverage(label):
-        m = re.search(rf"{label}\s+([\d,]+)/([\d,]+)\s+\((\d+)%\)(?:\s+\(([+\-]\d+)\))?", text)
+    def find_coverage(label, section=None):
+        # If a section anchor is given, only search the slice between that
+        # anchor and the next blank line. The DQ summary now emits two
+        # COVERAGE CHANGE blocks (editorial vs full catalog); we prefer the
+        # full-catalog block because that's the number that moves daily as
+        # rotation enriches discovered artists.
+        haystack = text
+        if section:
+            sec_match = re.search(rf"{re.escape(section)}.*?(?=\n\s*\n|\Z)", text, re.DOTALL)
+            if sec_match:
+                haystack = sec_match.group(0)
+            else:
+                return None
+        m = re.search(rf"{label}\s+([\d,]+)/([\d,]+)\s+\((\d+)%\)(?:\s+\(([+\-]\d+)\))?", haystack)
         if not m:
             return None
         return {
@@ -39,6 +51,11 @@ def get_music_summary():
             "pct":   int(m.group(3)),
             "delta": int(m.group(4)) if m.group(4) else 0,
         }
+
+    def find_catalog_coverage(label):
+        # Prefer full-catalog section; fall back to whole-doc for older
+        # summary files that don't have the split format.
+        return find_coverage(label, section="full catalog") or find_coverage(label)
 
     # Parse per-artist activity from the daily log
     artists = []
@@ -162,9 +179,12 @@ def get_music_summary():
         "broken_wikipedia":      find_int(r"Broken wikipedia\s+(\d+)"),
         "broken_cover_art":      find_int(r"Broken cover art\s+(\d+)"),
         "artists_pruned":        find_int(r"Artists pruned\s+(\d+)"),
-        "spotify":               find_coverage("Spotify URLs"),
-        "wikipedia":             find_coverage("Wikipedia URLs"),
-        "cover_art":             find_coverage("Cover art"),
+        "spotify":               find_catalog_coverage("Spotify URLs"),
+        "wikipedia":             find_catalog_coverage("Wikipedia URLs"),
+        "cover_art":             find_catalog_coverage("Cover art"),
+        "spotify_editorial":     find_coverage("Spotify URLs", section="editorial"),
+        "wikipedia_editorial":   find_coverage("Wikipedia URLs", section="editorial"),
+        "cover_art_editorial":   find_coverage("Cover art", section="editorial"),
         "editorial":             editorial,
         "artists":               artists,
         "track_enrichment":      track_enrichment,
