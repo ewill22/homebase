@@ -882,6 +882,44 @@ def check_and_respond():
 
         matched = False
 
+        # Dynamic "going to <dispensary>" / "heading to <dispensary>" — pre-trip report
+        going_match = None
+        for prefix in ("going to ", "heading to "):
+            if text.startswith(prefix):
+                going_match = text[len(prefix):].strip()
+                break
+        if going_match:
+            from dispensary_planner import build_trip_email, _store_for_alias
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from logger import log_event
+            tz = ZoneInfo(_get_config()["user"]["timezone"])
+            now = datetime.now(tz)
+            if not _store_for_alias(going_match):
+                send_email(
+                    subject=f"homebase | unknown dispensary",
+                    body=(f"Don't recognize '{going_match}'. Try: conservatory, "
+                          f"med leaf, city leaves, green wellness."),
+                    to=reply_to,
+                )
+            else:
+                try:
+                    body = build_trip_email(going_match)
+                    send_email(
+                        subject="homebase | " + now.strftime("heading out - %a %b %d, %I:%M %p"),
+                        body=body, to=reply_to,
+                    )
+                    log_event("command", message=f"trip_report → {reply_to}", detail=going_match)
+                except Exception as e:
+                    import traceback
+                    send_email(
+                        subject=f"homebase | trip report failed",
+                        body=f"Couldn't build the trip report for {going_match}: {e}\n\n{traceback.format_exc()}",
+                        to=reply_to,
+                    )
+            conn.store(eid, "+FLAGS", "\\Seen")
+            continue
+
         # Dynamic "watch <team>" and "brief <team>" — parameterised, dispatch first
         if text.startswith("brief "):
             team = text.split(None, 1)[1].strip()
@@ -889,7 +927,7 @@ def check_and_respond():
             from datetime import datetime
             from zoneinfo import ZoneInfo
             from logger import log_event
-            tz = ZoneInfo(get_config()["user"]["timezone"])
+            tz = ZoneInfo(_get_config()["user"]["timezone"])
             now = datetime.now(tz)
             send_email(
                 subject="homebase | " + now.strftime("%a %b %d, %I:%M %p"),

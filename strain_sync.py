@@ -213,6 +213,79 @@ def dispenseapp_list_all(name, venue_id, org_id, menu_url):
             pass
 
 
+def dispenseapp_full_flower_menu(name, venue_id, org_id, menu_url):
+    """Pull every flower SKU at a DispenseApp store (no strain filter).
+    Captures regular price, discounted price, and the full lab panel.
+    Used by dispensary_planner — not by the daily Crops sweep."""
+    token = _da_guest_token(org_id, menu_url)
+    cats_resp = _da_get(
+        f"{_DA_BASE}/v1/venues/{venue_id}/product-categories?orderPickUpType=IN_STORE",
+        token, menu_url,
+    )
+    categories = cats_resp if isinstance(cats_resp, list) else cats_resp.get("data", [])
+    out = []
+    for cat in categories:
+        cat_name = cat.get("name") or cat.get("productCategoryName", "")
+        if "flower" not in cat_name.lower() and "pre-roll" not in cat_name.lower() and "preroll" not in cat_name.lower():
+            continue
+        cat_id = cat.get("id") or cat.get("_id")
+        try:
+            url = (f"{_DA_BASE}/v1/venues/{venue_id}/product-categories/{cat_id}"
+                   f"/products?skip=0&limit=200&orderPickUpType=IN_STORE")
+            resp = _da_get(url, token, menu_url)
+            products = resp if isinstance(resp, list) else resp.get("data", [])
+        except Exception:
+            continue
+        for p in products:
+            pname = (p.get("name") or "").strip()
+            if not pname:
+                continue
+            labs   = p.get("labs") or {}
+            price  = p.get("price")
+            disc_price = p.get("priceWithDiscounts")
+            disc_pct   = p.get("discountValueFinal")
+            sale_price = None
+            if disc_price is not None and price is not None and disc_price < price:
+                sale_price = disc_price
+            offers = p.get("discounts") or []
+            offer_label = None
+            for o in offers:
+                if o.get("productOfferType") == "SALE":
+                    offer_label = "SALE"; break
+            out.append({
+                "dispensary":   name,
+                "product_name": pname,
+                "brand":        (p.get("brand") or {}).get("name"),
+                "category":     cat_name,
+                "strain_name":  (p.get("strain") or "").strip().lower() or None,
+                "strain_type":  p.get("cannabisType"),
+                "price":        price,
+                "sale_price":   sale_price,
+                "discount_pct": disc_pct if disc_pct else None,
+                "discount_label": offer_label,
+                "in_stock":     1 if p.get("isAvailable", True) else 0,
+                "package_id":   p.get("posProductId"),
+                "menu_url":     menu_url,
+                "thc":          labs.get("thc"),
+                "thca":         labs.get("thcA"),
+                "cbd":          labs.get("cbd"),
+                "cbda":         labs.get("cbdA"),
+                "cbg":          labs.get("cbg"),
+                "cbn":          labs.get("cbn"),
+                "limonene":     labs.get("limonene"),
+                "beta_myrcene": labs.get("betaMyrcene"),
+                "beta_caryophyllene": labs.get("betaCaryophyllene"),
+                "humulene":     labs.get("humulene"),
+                "alpha_pinene": labs.get("alphaPinene"),
+                "beta_pinene":  labs.get("betaPinene"),
+                "linalool":     labs.get("linalool"),
+                "ocimene":      labs.get("ocimene"),
+                "terpinolene":  labs.get("terpinolene"),
+                "bisabolol":    labs.get("bisabolol"),
+            })
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Dutchie — generic (used by Brute's Roots, The Botanist, Public Absecon)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -287,6 +360,46 @@ def _du_all_products(dispensary_id):
     return all_prods
 
 
+_DU_CANNABINOID_MAP = {
+    "THCA": "thca",
+    "tetrahydrocannabinolic acid": "thca",
+    "CBDA": "cbda",
+    "cannabidiolic acid": "cbda",
+    "CBG": "cbg",
+    "cannabigerol": "cbg",
+    "CBN": "cbn",
+    "cannabinol": "cbn",
+}
+
+
+def _du_potency_max(content):
+    """Pull the highest non-zero value from a Dutchie ProductPotency.range."""
+    rng = (content or {}).get("range") or []
+    vals = [v for v in rng if isinstance(v, (int, float)) and v > 0]
+    return max(vals) if vals else None
+
+
+def _du_extract_cannabinoids(p):
+    """Extract THC/CBD totals + minor cannabinoids from a Dutchie product."""
+    out = {"thc": _du_potency_max(p.get("THCContent")),
+           "cbd": _du_potency_max(p.get("CBDContent")),
+           "thca": None, "cbda": None, "cbg": None, "cbn": None}
+    for c in (p.get("cannabinoidsV2") or []):
+        cname = (c.get("cannabinoid") or {}).get("name", "")
+        val   = c.get("value")
+        if val is None:
+            continue
+        for needle, col in _DU_CANNABINOID_MAP.items():
+            if needle in cname:
+                out[col] = val
+                break
+    # Fallback: if THCContent was empty/zero and we have THCA, use it as thc
+    # (matches prior behavior — for raw flower THCA ≈ displayed potency)
+    if out["thc"] is None and out["thca"] is not None:
+        out["thc"] = out["thca"]
+    return out
+
+
 def _du_extract_price(p):
     """Safely extract the first rec price from a Dutchie product."""
     for key in ("Prices", "recPrices", "medicalPrices"):
@@ -316,14 +429,7 @@ def dutchie_search(name, dispensary_id, menu_url, strain):
             continue
         if all(w in pname.lower() for w in strain_words):
             price  = _du_extract_price(p)
-            thc    = ((p.get("THCContent") or {}).get("range") or [None])[0]
-            cbd    = ((p.get("CBDContent") or {}).get("range") or [None])[0]
-            # cannabinoidsV2 has more detail when present
-            for c in (p.get("cannabinoidsV2") or []):
-                cname = (c.get("cannabinoid") or {}).get("name", "")
-                val   = c.get("value")
-                if "THCA" in cname or "tetrahydrocannabinolic acid" in cname:
-                    thc = val
+            cbn_data = _du_extract_cannabinoids(p)
             images = p.get("images") or []
             image_url  = images[0].get("url") if images else p.get("Image")
             created_ms = p.get("createdAt")
@@ -343,12 +449,12 @@ def dutchie_search(name, dispensary_id, menu_url, strain):
                 "package_id":   (p.get("POSMetaData") or {}).get("canonicalPackageId"),
                 "strain_type":  p.get("strainType"),
                 "potency":      None,
-                "thc":          thc,
-                "thca":         None,
-                "cbd":          cbd,
-                "cbda":         None,
-                "cbg":          None,
-                "cbn":          None,
+                "thc":          cbn_data["thc"],
+                "thca":         cbn_data["thca"],
+                "cbd":          cbn_data["cbd"],
+                "cbda":         cbn_data["cbda"],
+                "cbg":          cbn_data["cbg"],
+                "cbn":          cbn_data["cbn"],
                 "limonene":     None,
                 "beta_myrcene": None,
                 "beta_caryophyllene": None,

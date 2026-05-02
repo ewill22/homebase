@@ -9,6 +9,7 @@ Rules and context for working in this repo.
 - **DB connection is `get_connection()`** (not `get_conn()`) from `db.py` — connects to the **homebase** database. Queries against guapa tables (e.g. `strain_stock`) must be **fully qualified** as `guapa.<table>` or they'll hit a non-existent `homebase.<table>`. Broke strain sync silently for 6 days on 4/18.
 - **Don't stack stdout redirects** — if a `.bat` wrapper does `>> logs/foo.log 2>&1`, the Python script inside must NOT also `open(same_log, "a")`. Windows won't allow a second handle; errors surface as `PermissionError` and the real cause gets buried.
 - **Don't swallow exceptions with `try/except: pass`** in nightly jobs — at minimum `print(traceback)` so the bat-wrapped log captures it. Silent failure is worse than loud failure.
+- **In `commands.py` use `_get_config()` (the module-level alias), not bare `get_config()`** — the latter is only imported locally inside `cmd_home_summary`. Two handlers (`brief <team>` and `going to <dispensary>`) silently `NameError`'d and marked emails as Seen with no reply, because `pythonw.exe` swallows stderr. Caught 5/02 when "going to medleaf" produced no email despite the task running successfully.
 - **Always pass `encoding="utf-8"` to `open()`** — Python on Windows defaults to cp1252 and silently breaks the moment a file gains a curly quote, em dash, or any high-bit byte. Broke guapa_music summary parsing on 5/01 when 103 new editorial descriptions introduced non-ASCII; the bare `except: return None` hid it and dropped the music section from the morning email.
 - **All user-facing HTML text through `safe()`** — normalizes Unicode + html.escape() + xmlcharrefreplace
 - **Email subject lines must be ASCII only** — em dashes, curly quotes etc. break Gmail threading
@@ -54,11 +55,20 @@ Spotify Tracker (every 5 min) → spotify_plays
 - `strain_checker.py` — thin reader over `guapa.strain_stock` (used by morning email)
 - `strain_sync.py` — collector: scrapes 12 NJ dispensaries (DispenseApp/Dutchie/Sweed), writes to `guapa.strain_stock`
 - `strain_sync_run.py` — entry point for the 6:30 AM scheduled task (calls `sync_crops_catalog()`)
+- **Terpene coverage is structurally limited — don't re-investigate.** DispenseApp stores (Conservatory, Med Leaf, City Leaves, Green Wellness) populate terpenes via their API. Dutchie stores (MPX, Botanist, AC LEEF, Brute's, Public Absecon, Juniper, Atlantic Flower) do not: the schema's `terpenes` field returns null and `terpenesV2` doesn't exist on the `Products` type. COA URLs (`canonicalLabResultUrl`) are null on 100% of Dutchie products too — the dispensaries simply don't publish terps upstream. AC LEEF additionally publishes no cannabinoid data. Probed 5/02 (introspection blocked at Cloudflare, POSTs blocked, GET non-persisted queries work but the data isn't there). Cannabinoid coverage on Dutchie (THC/THCA/CBD/CBDA/CBG/CBN) IS extracted via `_du_extract_cannabinoids` from `cannabinoidsV2`.
 - `guapa_music.py` — parses guapa-data's DQ summary (coverage stats, editorial content, per-artist enrichment)
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
 - `health_steps.py` — full step CLI; use `--import-xml` to backfill from Apple Health export
 - `odds_alerter/` — NHL playoff flip detector; texts via Google Fi SMS gateway when a pregame favorite's live moneyline crosses to positive. Enriches alerts with NHL CF% (Corsi shot share) via free `api-web.nhle.com`. Supports `watch <TAG>` email command for per-cycle score/CF% pulses. State in `odds_games`, `odds_api_usage`, `odds_flip_history`, `odds_watch`. 500-credit/mo budget on The Odds API — see `odds_alerter/README.md`.
+- `dispensary_planner.py` — pre-trip dispensary report. Email triggers `going to <dispensary>` / `heading to <dispensary>` (conservatory, med leaf, city leaves, green wellness). On request:
+  - Snapshots full flower/pre-roll menu via DispenseApp into `homebase.dispensary_menu` (one snapshot_id per call, kept forever)
+  - Emails back: top sales (>=25% off, sorted by % off) + top 10 flower SKUs by terpene similarity to Secret Meetings (default reference; pre-rolls excluded from similarity)
+  - Side-effect: writes a freeze-pane HTML side-by-side comparison to `iCloudDrive/homebase/secret_meetings_compare.html` (also `logs/`) — sticky reference column, drastic-cell highlighting, green column for genuine clones (every measured terp within 0.05 of reference). Open on phone via Files → iCloud Drive → homebase.
+  - Manual refresh without re-scraping: `python _compare_with_highlight.py [conservatory|medleaf|...]` rebuilds the HTML from the latest snapshot in DB.
+  - DispenseApp stores only — Dutchie has no terpene data (see note above), so Botanist/MPX/AC LEEF aren't supported.
+  - Reference profile is hardcoded in `_SECRET_MEETINGS_REF` — averaged from Secret Meetings rows with terp data on 5/02. Update if Crops genetics drift.
+  - Clone tolerance default 0.05: tighter rejects even genuine SM (lab-to-lab variation), looser flags strains with real myrcene/linalool divergence. Calibrated 5/02.
 
 ## Email Layout Order
 
