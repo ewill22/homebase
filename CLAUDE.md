@@ -9,6 +9,7 @@ Rules and context for working in this repo.
 - **DB connection is `get_connection()`** (not `get_conn()`) from `db.py` — connects to the **homebase** database. Queries against guapa tables (e.g. `strain_stock`) must be **fully qualified** as `guapa.<table>` or they'll hit a non-existent `homebase.<table>`. Broke strain sync silently for 6 days on 4/18.
 - **Don't stack stdout redirects** — if a `.bat` wrapper does `>> logs/foo.log 2>&1`, the Python script inside must NOT also `open(same_log, "a")`. Windows won't allow a second handle; errors surface as `PermissionError` and the real cause gets buried.
 - **Don't swallow exceptions with `try/except: pass`** in nightly jobs — at minimum `print(traceback)` so the bat-wrapped log captures it. Silent failure is worse than loud failure.
+- **Always pass `encoding="utf-8"` to `open()`** — Python on Windows defaults to cp1252 and silently breaks the moment a file gains a curly quote, em dash, or any high-bit byte. Broke guapa_music summary parsing on 5/01 when 103 new editorial descriptions introduced non-ASCII; the bare `except: return None` hid it and dropped the music section from the morning email.
 - **All user-facing HTML text through `safe()`** — normalizes Unicode + html.escape() + xmlcharrefreplace
 - **Email subject lines must be ASCII only** — em dashes, curly quotes etc. break Gmail threading
 - **Degree symbols in HTML must be `&deg;`** — bare ° breaks Gmail rendering mid-email

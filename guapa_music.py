@@ -20,7 +20,7 @@ def get_music_summary():
         return None
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
     except Exception:
         return None
