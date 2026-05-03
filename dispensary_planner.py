@@ -313,6 +313,37 @@ def _grams_from_name(name):
     return float(m.group(1)) if m else None
 
 
+_NON_STRAIN_TOKENS = re.compile(
+    r"^\s*(\d+(?:\.\d+)?\s*(g|oz|mg|gram|ounce)|"
+    r"flower|pre-?roll|pre-?rolls|small\s*buds?|premium|trim|"
+    r"infused|live|kief|diamond|hash|concentrate|cartridge|vape|disposable|"
+    r"-)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strain_label_from_product(product_name, brand):
+    """Pick the segment most likely to be the strain name, regardless of dispensary's
+    naming convention (Conservatory uses BRAND|STRAIN|SIZE, Med Leaf uses STRAIN|SIZE|CAT, etc.)."""
+    if not product_name:
+        return ""
+    segs = [s.strip() for s in product_name.split("|") if s.strip()]
+    if not segs:
+        return product_name
+    brand_norm = (brand or "").strip().lower()
+    for seg in segs:
+        if seg.lower() == brand_norm:
+            continue
+        if _NON_STRAIN_TOKENS.match(seg):
+            continue
+        return seg
+    # Fallback: nothing passed filters, return first non-brand segment, else whole name
+    for seg in segs:
+        if seg.lower() != brand_norm:
+            return seg
+    return segs[0]
+
+
 def _classify_cell(ref_rel, candidate_rel, candidate_raw, ref_raw,
                    rel_thresh=0.40, abs_thresh=0.04):
     """Operates on RELATIVE profiles (% of strain's own total terps). 'missing' state
@@ -454,7 +485,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
              **{k: ref[k] for k in ref}}]
     for d, p in similar:
         name = (p.get("product_name") or "")
-        short = name.split("|")[1].strip() if "|" in name else name
+        short = _strain_label_from_product(name, p.get("brand"))
         grams = _grams_from_name(name)
         price = p.get("sale_price") or p.get("price")
         cols.append({
