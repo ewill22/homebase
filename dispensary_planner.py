@@ -406,8 +406,22 @@ def build_trip_email(dispensary_alias):
 # ══════════════════════════════════════════════════════════════════════════════
 # Side-by-side comparison HTML (saved to iCloud + logs)
 
-_TERP_LABELS = ["Limonene", "Caryophyllene", "Myrcene", "Linalool", "Humulene",
-                "a-Pinene", "b-Pinene", "Terpinolene", "Ocimene", "Bisabolol"]
+# Display label per terpene key. Use a dict so labels can never drift out of order
+# from _TERP_KEYS (a previous bug had them reversed for myrcene/limonene/caryophyllene
+# because two parallel lists got desynced; never let that happen again).
+_TERP_DISPLAY = {
+    "beta_myrcene":       "Myrcene",
+    "limonene":           "Limonene",
+    "beta_caryophyllene": "Caryophyllene",
+    "linalool":           "Linalool",
+    "humulene":           "Humulene",
+    "alpha_pinene":       "a-Pinene",
+    "beta_pinene":        "b-Pinene",
+    "terpinolene":        "Terpinolene",
+    "ocimene":            "Ocimene",
+    "bisabolol":          "Bisabolol",
+}
+_TERP_LABELS = [_TERP_DISPLAY[k] for k in _TERP_KEYS]  # ordered to match keys
 
 
 def _grams_from_name(name):
@@ -425,22 +439,37 @@ _NON_STRAIN_TOKENS = re.compile(
 )
 
 
+_SIZE_TOKEN_RE = re.compile(r"\d+(?:\.\d+)?\s*[gG]\b")
+
+
 def _strain_label_from_product(product_name, brand):
-    """Pick the segment most likely to be the strain name, regardless of dispensary's
-    naming convention (Conservatory uses BRAND|STRAIN|SIZE, Med Leaf uses STRAIN|SIZE|CAT, etc.)."""
+    """Pick the segment most likely to be the strain name across naming conventions:
+      Conservatory:        BRAND | STRAIN | SIZE
+      Med Leaf:            STRAIN | SIZE | CATEGORY
+      Harvest Moon Farms:  SUB-BRAND | STRAIN | SIZE  (e.g. "MADE | BERRY KIMBER OG | - 3.5 G")
+      Magic Garden:        BRAND | SUB-BRAND | STRAIN | SIZE
+    Strategy: filter out brand, size descriptors, and pure category tokens, then return the
+    longest surviving segment (sub-brands tend to be short, strain names tend to be longer)."""
     if not product_name:
         return ""
     segs = [s.strip() for s in product_name.split("|") if s.strip()]
     if not segs:
         return product_name
     brand_norm = (brand or "").strip().lower()
+
+    candidates = []
     for seg in segs:
         if seg.lower() == brand_norm:
             continue
-        if _NON_STRAIN_TOKENS.match(seg):
+        if _SIZE_TOKEN_RE.search(seg):  # contains "X G" / "3.5 G" / etc.
             continue
-        return seg
-    # Fallback: nothing passed filters, return first non-brand segment, else whole name
+        if _NON_STRAIN_TOKENS.match(seg):  # pure size / category tokens
+            continue
+        candidates.append(seg)
+
+    if candidates:
+        return max(candidates, key=len)
+    # Fallback: first non-brand segment, else first segment
     for seg in segs:
         if seg.lower() != brand_norm:
             return seg
