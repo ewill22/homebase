@@ -157,13 +157,37 @@ def classify_chemovar(prod):
     return {"type": type_label, "cluster": cluster, "subtype": subtype, "label": label}
 
 
+# Per-terpene weights for the distance metric. Terpinolene gets a 3x boost because
+# it's a rare, distinctive note in Cluster C strains — Secret Meetings has 5% of its
+# total terps as terpinolene, and most of its profile-shape twins have zero. Without
+# weighting, the distance metric treats those zero-terpinolene strains as "close" when
+# they're actually missing SM's signature whisper.
+_TERP_WEIGHTS = {k: 1.0 for k in (
+    "limonene", "beta_caryophyllene", "beta_myrcene", "linalool", "humulene",
+    "alpha_pinene", "beta_pinene", "ocimene", "bisabolol")}
+_TERP_WEIGHTS["terpinolene"] = 3.0
+
+
 def _terp_distance(prod, ref):
     """Euclidean distance over RELATIVE terpene profiles (each terp as % of strain's
-    own total). This compares profile shape independent of overall terp loudness —
-    a louder version of the same profile gets distance ~0, not penalized for being loud."""
+    own total), with terpinolene weighted 3x. This compares profile shape independent
+    of overall terp loudness — a louder version of the same profile gets distance ~0,
+    not penalized for being loud — but candidates missing SM's terpinolene whisper get
+    penalized appropriately."""
     prod_rel = _relative_profile(prod)
     ref_rel  = _relative_profile(ref) if ref is not _SECRET_MEETINGS_REF else _SM_RELATIVE
-    return sum((prod_rel[k] - ref_rel[k]) ** 2 for k in _TERP_KEYS) ** 0.5
+    return sum(_TERP_WEIGHTS.get(k, 1.0) * (prod_rel[k] - ref_rel[k]) ** 2 for k in _TERP_KEYS) ** 0.5
+
+
+# A "terpinolene whisper" matches SM's level: terpinolene at >= 3% of total terps
+# OR >= 0.04% of bud weight. Either threshold is enough since some labs report only
+# absolute percentages without computing relative shares.
+def _has_terpinolene_whisper(p):
+    terp_abs = (p.get("terpinolene") or 0)
+    if terp_abs >= 0.04:
+        return True
+    rel = _relative_profile(p)
+    return rel.get("terpinolene", 0) >= 0.03
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -580,6 +604,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
         c["_total_terps"] = sum((c.get(k) or 0) for k in _TERP_KEYS)
         c["_relative"]    = _relative_profile(c)
         c["_chemovar"]    = classify_chemovar(c)
+        c["_whisper"]     = _has_terpinolene_whisper(c)
 
     exact_idx = {i for i, c in enumerate(cols[1:], start=1) if _is_clone(c, ref)}
 
@@ -632,6 +657,11 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
             return html_lib.escape(f"{cl} / {subtype}")
         return html_lib.escape(subtype)
     _row("Chemovar", "_chemovar", _chemovar_short)
+    # Terpinolene whisper indicator — surfaces SM's distinguishing trait.
+    # The reference column always shows ✓ (SM has it by definition).
+    _row("Terp whisper", "_whisper",
+         lambda v: ('<span style="color:#2a8a3e;font-weight:600;">&#10003; yes</span>'
+                    if v else '<span style="color:#999;">&mdash;</span>'))
 
     parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of strain\'s total terps) &mdash;</td>'
                  f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}<td class="tail-spacer"></td></tr>')
@@ -657,7 +687,60 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
         parts.append("".join(row))
 
     parts.append('</tbody></table></div>')
+
+    # ── "Notable cousins" — limonene-rich AND loud terpinolene (>= 0.10% absolute).
+    # Not SM clones, but if you like SM's small terpinolene whisper, these turn it up
+    # to 11. Different feel from SM (more cerebral / old-school sativa edge), but
+    # related family.
+    cousins = _find_loud_terp_cousins(products, top_n=4)
+    if cousins:
+        parts.append('<h3 style="font-size:13px;margin:12px 0 4px;color:#444;">'
+                     'Loud-terpinolene cousins (different feel, but related)</h3>')
+        parts.append('<div class="sub" style="margin-bottom:6px;">'
+                     'These are limonene-rich AND have much louder terpinolene than SM '
+                     '(0.10%+ vs SM\'s 0.06%). Expect a more cerebral / piney / old-school '
+                     'sativa edge. Pick for variety, not for matching SM\'s vibe.</div>')
+        parts.append('<div class="scroll"><table><thead><tr>'
+                     '<th>Strain</th><th>Brand</th><th>Size</th><th>Price</th>'
+                     '<th>Total terps</th><th>Terpinolene</th><th>Limonene</th>'
+                     '<th>Chemovar</th></tr></thead><tbody>')
+        for p in cousins:
+            name  = _strain_label_from_product(p.get("product_name"), p.get("brand"))
+            grams = _grams_from_name(p.get("product_name") or "")
+            price = p.get("sale_price") or p.get("price")
+            total = sum((p.get(k) or 0) for k in _TERP_KEYS)
+            cv    = classify_chemovar(p)
+            parts.append(
+                f'<tr><td>{html_lib.escape(name[:30])}</td>'
+                f'<td>{html_lib.escape((p.get("brand") or "?")[:18])}</td>'
+                f'<td>{f"{grams}g" if grams else "&mdash;"}</td>'
+                f'<td>{f"${price:.0f}" if price else "&mdash;"}</td>'
+                f'<td><b>{total:.2f}%</b></td>'
+                f'<td style="color:#2a8a3e;font-weight:600;">{p["terpinolene"]:.2f}%</td>'
+                f'<td>{(p.get("limonene") or 0):.2f}%</td>'
+                f'<td>{html_lib.escape(cv["label"])}</td></tr>'
+            )
+        parts.append('</tbody></table></div>')
+
     return "".join(parts)
+
+
+def _find_loud_terp_cousins(products, top_n=4, min_lim=0.20, min_terp=0.10):
+    """Return limonene-rich, loud-terpinolene strains (different feel from SM but related).
+    Filters to flower only (no pre-rolls), in stock, with both terps measured."""
+    out = []
+    for p in products:
+        if not p.get("in_stock"):
+            continue
+        cat = (p.get("category") or "").lower()
+        if "pre-roll" in cat or "preroll" in cat:
+            continue
+        lim  = p.get("limonene") or 0
+        terp = p.get("terpinolene") or 0
+        if lim >= min_lim and terp >= min_terp:
+            out.append(p)
+    out.sort(key=lambda p: (p.get("terpinolene") or 0), reverse=True)
+    return out[:top_n]
 
 
 def _latest_snapshot_for(dispensary_name):
