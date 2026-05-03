@@ -392,6 +392,26 @@ _HTML_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
   .empty { color: #999; font-style: italic; padding: 14px 0; font-size: 13px; }
   /* Spacer column at the end — gives natural breathing room when scrolled all the way right */
   td.tail-spacer, th.tail-spacer { min-width: 16px; padding: 0; border: none; background: transparent; }
+
+  /* ── Mobile / narrow viewport (iPhone portrait, etc.) ──
+     Sticky columns at desktop sizes (130 + 160 = 290px) consume almost the entire iPhone
+     portrait viewport, leaving the candidate columns unreadably narrow. Compress everything. */
+  @media (max-width: 600px) {
+    body { padding: 8px; }
+    h1 { font-size: 16px; }
+    h2.store { font-size: 14px; margin: 18px 0 4px; padding-top: 12px; }
+    .sub, .legend { font-size: 10px; }
+    table { font-size: 11px; }
+    thead th { padding: 6px 7px; }
+    tbody td { padding: 5px 7px; }
+    th.sticky-l, td.sticky-l { min-width: 84px; max-width: 84px; }
+    th.sticky-r, td.sticky-r { left: 84px; min-width: 96px; max-width: 96px; }
+    /* Wrap long strain names in headers so they fit two lines instead of forcing horizontal scroll */
+    thead th { white-space: normal; line-height: 1.2; }
+    tbody td { white-space: normal; }
+    /* But keep numeric cells single-line so they don't wrap awkwardly */
+    tbody td:not(.sticky-l):not(.sticky-r) { white-space: nowrap; }
+  }
 </style></head><body>"""
 
 
