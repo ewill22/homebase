@@ -10,6 +10,7 @@ Rules and context for working in this repo.
 - **Don't stack stdout redirects** — if a `.bat` wrapper does `>> logs/foo.log 2>&1`, the Python script inside must NOT also `open(same_log, "a")`. Windows won't allow a second handle; errors surface as `PermissionError` and the real cause gets buried.
 - **Don't swallow exceptions with `try/except: pass`** in nightly jobs — at minimum `print(traceback)` so the bat-wrapped log captures it. Silent failure is worse than loud failure.
 - **In `commands.py` use `_get_config()` (the module-level alias), not bare `get_config()`** — the latter is only imported locally inside `cmd_home_summary`. Two handlers (`brief <team>` and `going to <dispensary>`) silently `NameError`'d and marked emails as Seen with no reply, because `pythonw.exe` swallows stderr. Caught 5/02 when "going to medleaf" produced no email despite the task running successfully.
+- **When Eric reports Hard Rock Bet end-of-night numbers, insert into `homebase.hrb_daily_pnl`.** Trigger phrases: "today we started -X, ended +Y," "we're at +$Z tonight," etc. Table columns: `date`, `start_balance`, `end_balance`, `net` (generated), `note`. Upsert by date so a corrected number replaces the row. Exists because the sportsbook has no API and Eric rejected scraping settlement emails as "not worth it" — manual end-of-day entry is the tradeoff. Tied to the odds_alerter project (Eric tracks whether the alerter moves the number).
 - **After creating or altering any homebase MySQL table, run `bash scripts/dump_schema.sh`** to refresh `schema.sql`. The repo carries a frozen snapshot of every table so the DB can be rebuilt from scratch on a new machine. The dump script reads `.env`, strips `AUTO_INCREMENT=N` (churns every dump), and writes `schema.sql` with a stable header. Forgetting this means future-you tries to clone homebase onto a new PC and gets `Table 'homebase.<X>' doesn't exist` everywhere.
 - **Always pass `encoding="utf-8"` to `open()`** — Python on Windows defaults to cp1252 and silently breaks the moment a file gains a curly quote, em dash, or any high-bit byte. Broke guapa_music summary parsing on 5/01 when 103 new editorial descriptions introduced non-ASCII; the bare `except: return None` hid it and dropped the music section from the morning email.
 - **All user-facing HTML text through `safe()`** — normalizes Unicode + html.escape() + xmlcharrefreplace
@@ -54,7 +55,11 @@ Spotify Tracker (every 5 min) → spotify_plays
 - `commands.py` — builds the home summary HTML; also the email command listener
 - `send_summary.py` — morning email entry point, logs to `send_summary.log` + `homebase_log`
 - `strain_checker.py` — thin reader over `guapa.strain_stock` (used by morning email)
-- `strain_sync.py` — collector: scrapes 12 NJ dispensaries (DispenseApp/Dutchie/Sweed), writes to `guapa.strain_stock`
+- `strain_sync.py` — collector: scrapes 12 NJ dispensaries (DispenseApp/Dutchie/Sweed), writes to `guapa.strain_stock`. Three platform shapes:
+  - **DispenseApp** (Med Leaf, City Leaves, Conservatory, Green Wellness) — JSON API with full lab panel: cannabinoids + terpenes + potency + strain type
+  - **Dutchie** (Brute's Roots, The Botanist, Public Absecon, AC LEEF, MPX NJ, Juniper Lane, Atlantic Flower) — GraphQL API. Requires `curl_cffi` with `impersonate="chrome120"` to clear Cloudflare; standard `urllib` returns 403. Returns THC/THCA/CBD/CBDA/CBG/CBN via `cannabinoidsV2` (extracted by `_du_extract_cannabinoids`) but **no terpene data** (see note below).
+  - **Sweed/HTML** (Cannabist Mays Landing) — server-rendered page; products parsed out of an embedded JSON blob
+  - Vapes/cartridges/disposables filtered at both category and product-name level. `new_batch=1` flag set when `package_id` differs from previous logged row for the same dispensary+strain.
 - `strain_sync_run.py` — entry point for the 6:30 AM scheduled task (calls `sync_crops_catalog()`)
 - **Terpene coverage is structurally limited — don't re-investigate.** DispenseApp stores (Conservatory, Med Leaf, City Leaves, Green Wellness) populate terpenes via their API. Dutchie stores (MPX, Botanist, AC LEEF, Brute's, Public Absecon, Juniper, Atlantic Flower) do not: the schema's `terpenes` field returns null and `terpenesV2` doesn't exist on the `Products` type. COA URLs (`canonicalLabResultUrl`) are null on 100% of Dutchie products too — the dispensaries simply don't publish terps upstream. AC LEEF additionally publishes no cannabinoid data. Probed 5/02 (introspection blocked at Cloudflare, POSTs blocked, GET non-persisted queries work but the data isn't there). Cannabinoid coverage on Dutchie (THC/THCA/CBD/CBDA/CBG/CBN) IS extracted via `_du_extract_cannabinoids` from `cannabinoidsV2`.
 - `guapa_music.py` — parses guapa-data's DQ summary (coverage stats, editorial content, per-artist enrichment)
@@ -72,13 +77,26 @@ Spotify Tracker (every 5 min) → spotify_plays
   - **"Terp whisper" row** shows ✓ for candidates with terpinolene at SM's level (>= 3% of total OR >= 0.04% absolute).
   - **"Loud-terpinolene cousins" section** under each store's main table — limonene-rich strains with much louder terpinolene than SM. Different feel (more cerebral / old-school sativa) but related family. Worth knowing about for variety, not for matching SM.
   - Manual refresh without re-scraping: `python _compare_with_highlight.py` rebuilds the HTML from the latest snapshots in DB.
-  - DispenseApp stores only — Dutchie has no terpene data (see note above), so Botanist/MPX/AC LEEF aren't supported.
-  - Reference profile is hardcoded in `_SECRET_MEETINGS_REF` — averaged from Secret Meetings rows with terp data on 5/02. Update if Crops genetics drift.
+  - DispenseApp stores only — Dutchie has no terpene data (see note above), so Botanist/MPX/AC LEEF aren't supported. Same wall applies to Red Oak Absecon (also Dutchie). Eric explicitly chose not to build a degraded Dutchie variant.
+  - Reference profile is hardcoded in `_SECRET_MEETINGS_REF` — averaged from Secret Meetings rows with terp data on 5/02. Update if Crops genetics drift, or build dynamic reference selection from the email command (`going to conservatory like high society`).
   - Clone tolerance default 0.05: tighter rejects even genuine SM (lab-to-lab variation), looser flags strains with real myrcene/linalool divergence. Calibrated 5/02.
+  - **Strain-name parser handles 4 conventions**: Conservatory `BRAND|STRAIN|SIZE`, Med Leaf `STRAIN|SIZE|CATEGORY`, sub-branded `SUB|STRAIN|SIZE` (e.g. Harvest Moon's MADE line), and 4-segment `BRAND|SUB|STRAIN|SIZE` (Magic Garden Botanicals). `_strain_label_from_product` filters out brand + size + category tokens and returns the longest survivor. If a new store has a 5th format, extend `_NON_STRAIN_TOKENS` / `_SIZE_TOKEN_RE`.
+  - **Acknowledged limitations** (worth fixing if they bite):
+    - Subtype label is a threshold cliff at 5pp gap between top two terps. A 5.1pp gap and a 4.9pp gap land on different labels ("led" vs "balanced") despite being identical in feel. Showing the actual gap inline (e.g. "lim-led (gap 8pp)") would smooth this.
+    - `dispensary_menu` snapshots accumulate forever (~750 rows per trigger now that both stores refresh). No retention policy. Revisit if it gets unwieldy — Eric chose to defer the audit/prune work.
+    - Per-trip `going to` only re-scrapes Conservatory + Med Leaf hardcoded in the side-effect loop. If a new DispenseApp store is added, update that loop too.
 
 ## Email Layout Order
 
 greeting → date → day of life → steps → weather → calendar → devils → listening → strain → monthly recap
+
+## Ideas Parked for Later
+- **Email-to-Claude planning**: User emails "idea: [description]" → `commands.py` calls Anthropic API → Claude writes a plan → emailed back + saved to ideas table. Needs an Anthropic API key (console.anthropic.com).
+- **MAL SQL bucket**: Add a classification in `sql_qualification_status` for converted MAL leads, so their conversion rate is tracked separately from regular PQL SQLs. Work file: `work/leads_simple.sql` (dbt/Snowflake model).
+- **Guapa music data → Homebase**: Guapa Inc is building a music data product (artist similarity, discovery, Last.fm/MusicBrainz). Homebase will eventually consume it for a "recommended new releases" section. Homebase = consumer, Guapa = data provider — like YouTube to Google. Wait until Guapa's product is ready before building the Homebase side.
+- **Strain rating system**: A `strain_stock_ratings` table to correlate Eric's personal experience with terpene profiles over time. Parked — needs the trip planner to mature first.
+- **Cross-dispensary price comparison and batch quality tracking**: long-term direction for the strain tracker, building on accumulated `strain_stock` and `dispensary_menu` history.
+- **Dynamic reference profile** for the trip planner: take a strain name from the email command (`going to conservatory like high society`) and build the reference on the fly instead of using the hardcoded SM profile.
 
 ## Accounts
 
