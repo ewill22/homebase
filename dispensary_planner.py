@@ -78,6 +78,85 @@ def _relative_profile(prod_or_ref):
 _SM_RELATIVE = _relative_profile(_SECRET_MEETINGS_REF)
 
 
+def classify_chemovar(prod):
+    """Return a chemovar classification per Lewis (2018)-style framework.
+
+    Returns dict with:
+      type:    "I" / "II" / "III" / "IV" / "V" / None (unknown)
+      cluster: "A" / "B" / "C" / None
+      subtype: dominant-terpene description ("limonene-led", "balanced lim/caryo", etc.)
+      label:   compact human label like "Type I / C / limonene-led"
+
+    Type is determined by THC:CBD ratio (Type I = THC-dominant, II = mixed, III = CBD-dominant,
+    IV = CBG-dominant, V = hemp/negligible cannabinoids). Cluster is the Lewis terpene cluster:
+      A = myrcene + pinene dominant ("classic indica" lineages)
+      B = terpinolene-dominant ("classic sativa" lineages — Jack Herer family)
+      C = limonene + caryophyllene dominant (modern Cookie/Cake/Mints hybrids)
+    Subtype is the single dominant terpene if its share is much higher than the next, otherwise
+    a "balanced" label naming the top 2-3.
+    """
+    thc  = float(prod.get("thc")  or 0)
+    thca = float(prod.get("thca") or 0)
+    cbd  = float(prod.get("cbd")  or 0)
+    cbda = float(prod.get("cbda") or 0)
+    cbg  = float(prod.get("cbg")  or 0)
+    # Use total THC equivalent (thc + thca*0.877 decarb factor) and total CBD equivalent
+    thc_total = thc + thca * 0.877 if thca else thc
+    cbd_total = cbd + cbda * 0.877 if cbda else cbd
+
+    # Type classification
+    type_label = None
+    if thc_total < 1 and cbd_total < 1 and cbg < 1:
+        type_label = "V"
+    elif cbg > thc_total and cbg > cbd_total and cbg >= 1:
+        type_label = "IV"
+    elif thc_total > 0 or cbd_total > 0:
+        ratio = thc_total / max(cbd_total, 0.01)
+        if ratio >= 5:    type_label = "I"
+        elif ratio >= 0.2: type_label = "II"
+        else:              type_label = "III"
+
+    # Cluster + subtype from relative terpene profile
+    rel = _relative_profile(prod)
+    cluster = None
+    subtype = None
+    if any(v > 0 for v in rel.values()):
+        terpinolene_share = rel.get("terpinolene", 0) + rel.get("ocimene", 0)
+        myrcene_pinene    = rel.get("beta_myrcene", 0) + rel.get("alpha_pinene", 0) + rel.get("beta_pinene", 0)
+        limonene_caryo    = rel.get("limonene", 0) + rel.get("beta_caryophyllene", 0)
+        if terpinolene_share >= 0.15:
+            cluster = "B"
+        elif myrcene_pinene > limonene_caryo and rel.get("beta_myrcene", 0) >= 0.30:
+            cluster = "A"
+        else:
+            cluster = "C"
+
+        # Subtype: find dominant terpene(s)
+        ranked = sorted(rel.items(), key=lambda x: x[1], reverse=True)
+        top1_key, top1_val = ranked[0]
+        top2_key, top2_val = ranked[1] if len(ranked) > 1 else (None, 0)
+        # Friendly names
+        names = {"limonene": "lim", "beta_caryophyllene": "caryo", "beta_myrcene": "myrcene",
+                 "linalool": "linalool", "humulene": "humulene", "alpha_pinene": "pinene",
+                 "beta_pinene": "pinene", "terpinolene": "terp", "ocimene": "ocimene",
+                 "bisabolol": "bisabolol"}
+        if top1_val >= 0.40:
+            subtype = f"{names.get(top1_key, top1_key)}-dominant"
+        elif top1_val - top2_val <= 0.05:
+            subtype = f"{names.get(top1_key, top1_key)}/{names.get(top2_key, top2_key)} balanced"
+        else:
+            subtype = f"{names.get(top1_key, top1_key)}-led"
+
+    # Compact label
+    parts = []
+    if type_label: parts.append(f"Type {type_label}")
+    if cluster:    parts.append(cluster)
+    if subtype:    parts.append(subtype)
+    label = " / ".join(parts) if parts else "?"
+
+    return {"type": type_label, "cluster": cluster, "subtype": subtype, "label": label}
+
+
 def _terp_distance(prod, ref):
     """Euclidean distance over RELATIVE terpene profiles (each terp as % of strain's
     own total). This compares profile shape independent of overall terp loudness —
@@ -480,7 +559,8 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
         return (f'<h2 class="store">{html_lib.escape(dispensary_name)}</h2>'
                 f'<div class="empty">No flower with terpene data in the latest {html_lib.escape(dispensary_name)} snapshot.</div>')
 
-    cols = [{"label": ref_label, "brand": "Crops", "thc": ref_thc,
+    cols = [{"label": ref_label, "brand": "Crops", "thc": ref_thc, "thca": ref_thc,
+             "cbd": 0, "cbg": 0,
              "price": None, "grams": None, "ppg": None, "dist": 0.0,
              **{k: ref[k] for k in ref}}]
     for d, p in similar:
@@ -499,6 +579,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
     for c in cols:
         c["_total_terps"] = sum((c.get(k) or 0) for k in _TERP_KEYS)
         c["_relative"]    = _relative_profile(c)
+        c["_chemovar"]    = classify_chemovar(c)
 
     exact_idx = {i for i, c in enumerate(cols[1:], start=1) if _is_clone(c, ref)}
 
@@ -531,6 +612,8 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
     _row("THC %", "thc", lambda v: f"{v:.1f}%" if v else "&mdash;")
     _row("Distance to ref", "dist", lambda v: f"{v:.2f}" if isinstance(v, (int, float)) else "&mdash;")
     _row("Total terpenes", "_total_terps", lambda v: f"<b>{v:.2f}%</b>" if v else "&mdash;")
+    _row("Chemovar", "_chemovar",
+         lambda v: html_lib.escape(v.get("label", "?")) if isinstance(v, dict) else "&mdash;")
 
     parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of strain\'s total terps) &mdash;</td>'
                  f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}<td class="tail-spacer"></td></tr>')
