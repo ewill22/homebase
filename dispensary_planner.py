@@ -63,9 +63,28 @@ _SECRET_MEETINGS_REF = {
 _TERP_KEYS = list(_SECRET_MEETINGS_REF.keys())
 
 
+def _relative_profile(prod_or_ref):
+    """Return each terpene value as a fraction of that strain's total measured terps.
+    Total = sum of all terp readings (NULLs counted as 0). If total is 0, returns all 0s.
+    This normalizes for "loudness" so two strains with different total terpene levels
+    can be compared on profile shape alone."""
+    total = sum(float(prod_or_ref.get(k) or 0) for k in _TERP_KEYS)
+    if total <= 0:
+        return {k: 0.0 for k in _TERP_KEYS}
+    return {k: (float(prod_or_ref.get(k) or 0) / total) for k in _TERP_KEYS}
+
+
+# Pre-computed relative profile for the Secret Meetings reference
+_SM_RELATIVE = _relative_profile(_SECRET_MEETINGS_REF)
+
+
 def _terp_distance(prod, ref):
-    """Euclidean distance over terpene profile. NULLs treated as 0."""
-    return sum((float(prod.get(k) or 0) - ref[k]) ** 2 for k in _TERP_KEYS) ** 0.5
+    """Euclidean distance over RELATIVE terpene profiles (each terp as % of strain's
+    own total). This compares profile shape independent of overall terp loudness —
+    a louder version of the same profile gets distance ~0, not penalized for being loud."""
+    prod_rel = _relative_profile(prod)
+    ref_rel  = _relative_profile(ref) if ref is not _SECRET_MEETINGS_REF else _SM_RELATIVE
+    return sum((prod_rel[k] - ref_rel[k]) ** 2 for k in _TERP_KEYS) ** 0.5
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -294,33 +313,36 @@ def _grams_from_name(name):
     return float(m.group(1)) if m else None
 
 
-def _classify_cell(ref_val, candidate_val, rel_thresh=0.40, abs_thresh=0.05):
-    """Drastic = relative diff >= rel_thresh AND absolute diff >= abs_thresh."""
-    if candidate_val is None:
-        if ref_val and ref_val >= 0.05:
+def _classify_cell(ref_rel, candidate_rel, candidate_raw, ref_raw,
+                   rel_thresh=0.40, abs_thresh=0.04):
+    """Operates on RELATIVE profiles (% of strain's own total terps). 'missing' state
+    still triggers when the candidate's raw value is null but the reference has a
+    meaningful raw value (>=0.05% of bud weight). 'drastic' = relative-share differs
+    by >=40% AND >=0.04 absolute share (e.g., 27% of total vs 17% of total)."""
+    if candidate_raw is None:
+        if ref_raw and ref_raw >= 0.05:
             return "missing"
         return "ok"
-    if ref_val is None or ref_val == 0:
+    if not ref_rel:
         return "ok"
-    abs_diff = abs(candidate_val - ref_val)
-    if abs_diff < abs_thresh or (abs_diff / ref_val) < rel_thresh:
+    abs_diff = abs(candidate_rel - ref_rel)
+    if abs_diff < abs_thresh or (abs_diff / ref_rel) < rel_thresh:
         return "ok"
-    return "high" if candidate_val > ref_val else "low"
+    return "high" if candidate_rel > ref_rel else "low"
 
 
-def _is_clone(col, ref_dict, tol=0.05):
-    """Every measured terp within `tol` of reference; missing values for ref-significant terps fail.
-    Default 0.05: tight enough that only genuine batch-twins of the reference qualify (e.g. the
-    same strain rebranded), but loose enough to absorb normal lab-to-lab variation. Calibrated
-    against Med Leaf 5/02 — 0.10 over-fires, 0.01-0.03 reject even the literal SM."""
+def _is_clone(col, ref_dict, tol=0.04):
+    """Every measured terp's RELATIVE share is within `tol` of reference's relative share;
+    missing values for ref-significant terps fail. Default 0.04 in relative-share space:
+    e.g. limonene at 27% vs 31% of total = 4-point gap. Calibrated for normalized profile
+    matching after switching from absolute to relative comparison 5/03."""
+    ref_rel = _relative_profile(ref_dict)
+    cand_rel = _relative_profile(col)
     for k in _TERP_KEYS:
-        ref_v = ref_dict.get(k, 0) or 0
-        cand_v = col.get(k)
-        if cand_v is None:
-            if ref_v >= 0.05:
-                return False
-            continue
-        if abs(cand_v - ref_v) > tol:
+        ref_raw = ref_dict.get(k, 0) or 0
+        if col.get(k) is None and ref_raw >= 0.05:
+            return False
+        if abs(cand_rel[k] - ref_rel[k]) > tol:
             return False
     return True
 
@@ -442,8 +464,10 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
             **{k: p.get(k) for k in ref},
         })
 
+    # Compute totals (absolute % bud weight) and relative profiles (each terp / total)
     for c in cols:
         c["_total_terps"] = sum((c.get(k) or 0) for k in _TERP_KEYS)
+        c["_relative"]    = _relative_profile(c)
 
     exact_idx = {i for i, c in enumerate(cols[1:], start=1) if _is_clone(c, ref)}
 
@@ -477,20 +501,25 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
     _row("Distance to ref", "dist", lambda v: f"{v:.2f}" if isinstance(v, (int, float)) else "&mdash;")
     _row("Total terpenes", "_total_terps", lambda v: f"<b>{v:.2f}%</b>" if v else "&mdash;")
 
-    parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of bud weight) &mdash;</td>'
+    parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of strain\'s total terps) &mdash;</td>'
                  f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}<td class="tail-spacer"></td></tr>')
 
+    ref_rel = cols[0]["_relative"]
     for k, lbl in zip(_TERP_KEYS, _TERP_LABELS):
-        ref_val = cols[0].get(k)
+        ref_raw = cols[0].get(k)
+        ref_share = ref_rel.get(k, 0)
+        # Display reference column as relative share, formatted as percentage
+        ref_str = f"{ref_share*100:.0f}%" if ref_share else "&mdash;"
         row = ['<tr>',
                f'<td class="sticky-l">{html_lib.escape(lbl)}</td>',
-               f'<td class="sticky-r">{(f"{ref_val:.2f}" if ref_val else "&mdash;")}</td>']
+               f'<td class="sticky-r">{ref_str}</td>']
         for i, c in enumerate(cols[1:], start=1):
-            cv = c.get(k)
-            state = _classify_cell(ref_val, cv)
+            cv_raw = c.get(k)
+            cv_rel = c["_relative"].get(k, 0)
+            state = _classify_cell(ref_share, cv_rel, cv_raw, ref_raw)
             style = _CELL_STYLE[state]
             cls = ' class="exact"' if i in exact_idx else ''
-            txt = f"{cv:.2f}" if cv is not None else "&mdash;"
+            txt = f"{cv_rel*100:.0f}%" if cv_raw is not None else "&mdash;"
             row.append(f'<td{cls} style="{style}">{txt}</td>')
         row.append('<td class="tail-spacer"></td></tr>')
         parts.append("".join(row))
@@ -535,11 +564,11 @@ def write_comparison_html(products=None, dispensary_name=None, ref=_SECRET_MEETI
     """
     parts = [_HTML_HEAD,
              '<h1>Secret Meetings &mdash; closest matches by terpene profile</h1>',
-             '<div class="sub">Each store has its own freeze-pane table below. Reference column is highlighted on the left of each. Terpene cells are highlighted when they differ from Secret Meetings by &ge;40% AND &ge;0.05 absolute. Gray = lab did not report. <b>Green column</b> = profile clone (every measured terp within 0.05 of reference).</div>',
+             '<div class="sub">Each terpene cell shows that terpene\'s <b>share of the strain\'s total terpenes</b> (e.g. "27%" means 27% of all this strain\'s terps are limonene). This normalizes for "loudness" so two strains with different total terpene levels can be compared on profile shape alone. The "Total terpenes" row shows absolute loudness (% of dry bud weight). Cells highlighted when relative share differs from Secret Meetings by &ge;40% AND &ge;4 percentage points. <b>Green column</b> = profile clone (every measured terp share within 4 points of reference).</div>',
              '<div class="legend">'
              '<span class="clone">green column = profile clone</span>'
-             '<span class="high">red = way more than ref</span>'
-             '<span class="low">amber = way less than ref</span>'
+             '<span class="high">red = way more than ref share</span>'
+             '<span class="low">amber = way less than ref share</span>'
              '<span class="miss">gray = lab did not report it</span>'
              '</div>']
 
