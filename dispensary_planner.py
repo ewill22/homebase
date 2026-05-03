@@ -612,8 +612,26 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
     _row("THC %", "thc", lambda v: f"{v:.1f}%" if v else "&mdash;")
     _row("Distance to ref", "dist", lambda v: f"{v:.2f}" if isinstance(v, (int, float)) else "&mdash;")
     _row("Total terpenes", "_total_terps", lambda v: f"<b>{v:.2f}%</b>" if v else "&mdash;")
-    _row("Chemovar", "_chemovar",
-         lambda v: html_lib.escape(v.get("label", "?")) if isinstance(v, dict) else "&mdash;")
+
+    # Chemovar row — show full label for the reference column, but for candidates compress to just
+    # the differing pieces. If Type AND Cluster match ref, show only the subtype. If only Cluster
+    # differs, show Cluster + subtype. If Type differs, show the whole label (rare in NJ rec).
+    ref_chem = cols[0].get("_chemovar") or {}
+    def _chemovar_short(v):
+        if not isinstance(v, dict):
+            return "&mdash;"
+        if v is ref_chem:  # reference column itself — show the full label
+            return html_lib.escape(v.get("label", "?"))
+        type_diff    = v.get("type")    != ref_chem.get("type")
+        cluster_diff = v.get("cluster") != ref_chem.get("cluster")
+        subtype = v.get("subtype") or "?"
+        if type_diff:
+            return html_lib.escape(v.get("label", "?"))
+        if cluster_diff:
+            cl = v.get("cluster") or "?"
+            return html_lib.escape(f"{cl} / {subtype}")
+        return html_lib.escape(subtype)
+    _row("Chemovar", "_chemovar", _chemovar_short)
 
     parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of strain\'s total terps) &mdash;</td>'
                  f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}<td class="tail-spacer"></td></tr>')
