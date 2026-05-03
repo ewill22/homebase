@@ -65,8 +65,8 @@ Spotify Tracker (every 5 min) → spotify_plays
 - `dispensary_planner.py` — pre-trip dispensary report. Email triggers `going to <dispensary>` / `heading to <dispensary>` (conservatory, med leaf, city leaves, green wellness). On request:
   - Snapshots full flower/pre-roll menu via DispenseApp into `homebase.dispensary_menu` (one snapshot_id per call, kept forever)
   - Emails back: top sales (>=25% off, sorted by % off) + top 10 flower SKUs by terpene similarity to Secret Meetings (default reference; pre-rolls excluded from similarity)
-  - Side-effect: writes a freeze-pane HTML side-by-side comparison to `iCloudDrive/homebase/secret_meetings_compare.html` (also `logs/`) — sticky reference column, drastic-cell highlighting, green column for genuine clones (every measured terp within 0.05 of reference). Open on phone via Files → iCloud Drive → homebase.
-  - Manual refresh without re-scraping: `python _compare_with_highlight.py [conservatory|medleaf|...]` rebuilds the HTML from the latest snapshot in DB.
+  - Side-effect: writes a freeze-pane HTML to `iCloudDrive/homebase/secret_meetings_compare.html` (also `logs/`). **Always shows both Conservatory AND Med Leaf** stacked — the freshly-scraped store fills its section, the other store is loaded from the latest DB snapshot. Each section has its own sticky reference column, drastic-cell highlighting, green column for genuine clones (every measured terp within 0.05 of reference), and a "Total terpenes" row showing % of bud weight. Open on phone via Files → iCloud Drive → homebase.
+  - Manual refresh without re-scraping: `python _compare_with_highlight.py` rebuilds the HTML from the latest snapshots in DB.
   - DispenseApp stores only — Dutchie has no terpene data (see note above), so Botanist/MPX/AC LEEF aren't supported.
   - Reference profile is hardcoded in `_SECRET_MEETINGS_REF` — averaged from Secret Meetings rows with terp data on 5/02. Update if Crops genetics drift.
   - Clone tolerance default 0.05: tighter rejects even genuine SM (lab-to-lab variation), looser flags strains with real myrcene/linalool divergence. Calibrated 5/02.

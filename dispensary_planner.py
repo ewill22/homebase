@@ -324,13 +324,49 @@ _CELL_STYLE = {
 }
 
 
-def write_comparison_html(products, dispensary_name, ref=_SECRET_MEETINGS_REF,
-                          ref_label="Secret Meetings (ref)", ref_thc=28.6, top_n=6,
-                          icloud_dir=r"C:\Users\eewil\iCloudDrive\homebase",
-                          local_path="logs/secret_meetings_compare.html"):
-    """Build the freeze-pane side-by-side HTML and write it to iCloud + logs.
-    Returns dict with paths. Called automatically from build_trip_email()."""
+_HTML_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Secret Meetings - Side by Side</title>
+<style>
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fafafa; margin: 0; padding: 24px; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2.store { font-size: 16px; margin: 28px 0 4px; padding-top: 18px; border-top: 1px solid #ddd; }
+  h2.store:first-of-type { border-top: none; padding-top: 0; }
+  .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
+  .scroll { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; background: #fff; max-width:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04); margin-bottom: 8px; }
+  table { border-collapse: collapse; font-size: 13px; }
+  thead th { background:#f0f0f0; padding:10px 12px; text-align:left; font-weight:600;
+             border-bottom:2px solid #ccc; position:sticky; top:0; z-index:2; white-space:nowrap; }
+  tbody td { white-space:nowrap; padding:8px 12px; border-bottom:1px solid #eee; }
+  th.sticky-l, td.sticky-l { position:sticky; left:0; background:#fff; z-index:3;
+                              font-weight:600; min-width:130px; box-shadow:1px 0 0 #ddd; }
+  thead th.sticky-l { z-index:4; background:#f0f0f0; }
+  th.sticky-r, td.sticky-r { position:sticky; left:130px; background:#fff8d6; z-index:3;
+                              font-weight:600; min-width:160px; box-shadow:1px 0 0 #d4c98a; }
+  thead th.sticky-r { z-index:4; background:#f5e9aa; }
+  .header-row td { background:#fafafa; font-size:11px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
+  .legend { font-size:11px; color:#666; margin: 12px 0 28px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend span { padding:2px 8px; border-radius:3px; }
+  .legend .clone { background:#d6f5dc; color:#2a8a3e; font-weight:600; }
+  .legend .high { background:#ffd6d6; color:#a02525; }
+  .legend .low  { background:#fff0c2; color:#8b6a00; }
+  .legend .miss { background:#f0f0f0; color:#999; font-style:italic; }
+  td.exact, th.exact { background:#d6f5dc !important; }
+  th.exact { color:#1f5e2c; }
+  .empty { color: #999; font-style: italic; padding: 14px 0; font-size: 13px; }
+</style></head><body>"""
+
+
+def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, top_n):
+    """Return the HTML fragment for one store's comparison table (no document chrome)."""
+    if not products:
+        return (f'<h2 class="store">{html_lib.escape(dispensary_name)}</h2>'
+                f'<div class="empty">No snapshot for {html_lib.escape(dispensary_name)} yet '
+                f'&mdash; email "going to {dispensary_name.lower()}" to capture one.</div>')
+
     similar = find_similar_to(products, ref=ref, top_n=top_n)
+    if not similar:
+        return (f'<h2 class="store">{html_lib.escape(dispensary_name)}</h2>'
+                f'<div class="empty">No flower with terpene data in the latest {html_lib.escape(dispensary_name)} snapshot.</div>')
 
     cols = [{"label": ref_label, "brand": "Crops", "thc": ref_thc,
              "price": None, "grams": None, "ppg": None, "dist": 0.0,
@@ -347,40 +383,16 @@ def write_comparison_html(products, dispensary_name, ref=_SECRET_MEETINGS_REF,
             **{k: p.get(k) for k in ref},
         })
 
+    for c in cols:
+        c["_total_terps"] = sum((c.get(k) or 0) for k in _TERP_KEYS)
+
     exact_idx = {i for i, c in enumerate(cols[1:], start=1) if _is_clone(c, ref)}
 
-    parts = ['<!DOCTYPE html><html><head><meta charset="utf-8">'
-             f'<title>{html_lib.escape(ref_label)} - Side by Side</title>',
-             '''<style>
-  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fafafa; margin: 0; padding: 24px; color: #222; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
-  .scroll { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; background: #fff; max-width:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
-  table { border-collapse: collapse; font-size: 13px; }
-  thead th { background:#f0f0f0; padding:10px 12px; text-align:left; font-weight:600;
-             border-bottom:2px solid #ccc; position:sticky; top:0; z-index:2; white-space:nowrap; }
-  tbody td { white-space:nowrap; padding:8px 12px; border-bottom:1px solid #eee; }
-  th.sticky-l, td.sticky-l { position:sticky; left:0; background:#fff; z-index:3;
-                              font-weight:600; min-width:130px; box-shadow:1px 0 0 #ddd; }
-  thead th.sticky-l { z-index:4; background:#f0f0f0; }
-  th.sticky-r, td.sticky-r { position:sticky; left:130px; background:#fff8d6; z-index:3;
-                              font-weight:600; min-width:160px; box-shadow:1px 0 0 #d4c98a; }
-  thead th.sticky-r { z-index:4; background:#f5e9aa; }
-  .header-row td { background:#fafafa; font-size:11px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
-  .legend { font-size:11px; color:#666; margin-top:12px; display:flex; gap:14px; flex-wrap:wrap; }
-  .legend span { padding:2px 8px; border-radius:3px; }
-  .legend .clone { background:#d6f5dc; color:#2a8a3e; font-weight:600; }
-  .legend .high { background:#ffd6d6; color:#a02525; }
-  .legend .low  { background:#fff0c2; color:#8b6a00; }
-  .legend .miss { background:#f0f0f0; color:#999; font-style:italic; }
-  td.exact, th.exact { background:#d6f5dc !important; }
-  th.exact { color:#1f5e2c; }
-</style></head><body>''']
-    parts.append(f'<h1>{html_lib.escape(ref_label.split(" (")[0])} &mdash; closest matches at {html_lib.escape(dispensary_name)}</h1>')
-    parts.append('<div class="sub">Reference column is frozen on the left. Terpene cells are highlighted when they differ by &ge;40% AND &ge;0.05 absolute. Gray = lab did not report. <b>Green column</b> = profile clone (every measured terp within 0.05 of reference - same strain or genuine batch-twin).</div>')
-    parts.append('<div class="scroll"><table><thead><tr>')
-    parts.append('<th class="sticky-l">Field</th>')
-    parts.append(f'<th class="sticky-r">{html_lib.escape(cols[0]["label"])}</th>')
+    parts = [f'<h2 class="store">{html_lib.escape(dispensary_name)} &mdash; '
+             f'{len(products)} SKUs in latest snapshot</h2>',
+             '<div class="scroll"><table><thead><tr>',
+             '<th class="sticky-l">Field</th>',
+             f'<th class="sticky-r">{html_lib.escape(cols[0]["label"])}</th>']
     for i, c in enumerate(cols[1:], start=1):
         if i in exact_idx:
             parts.append(f'<th class="exact">{html_lib.escape(c["label"])} <span style="color:#2a8a3e;">&#10003; clone</span></th>')
@@ -404,8 +416,9 @@ def write_comparison_html(products, dispensary_name, ref=_SECRET_MEETINGS_REF,
     _row("Price / gram", "ppg", lambda v: f"<b>${v:.2f}/g</b>" if v else "&mdash;")
     _row("THC %", "thc", lambda v: f"{v:.1f}%" if v else "&mdash;")
     _row("Distance to ref", "dist", lambda v: f"{v:.2f}" if isinstance(v, (int, float)) else "&mdash;")
+    _row("Total terpenes", "_total_terps", lambda v: f"<b>{v:.2f}%</b>" if v else "&mdash;")
 
-    parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes &mdash;</td>'
+    parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of bud weight) &mdash;</td>'
                  f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}</tr>')
 
     for k, lbl in zip(_TERP_KEYS, _TERP_LABELS):
@@ -424,13 +437,62 @@ def write_comparison_html(products, dispensary_name, ref=_SECRET_MEETINGS_REF,
         parts.append("".join(row))
 
     parts.append('</tbody></table></div>')
-    parts.append('<div class="legend">'
-                 '<span class="clone">green column = profile clone (every measured terp within 0.05 of ref)</span>'
-                 '<span class="high">red - way more than ref</span>'
-                 '<span class="low">amber - way less than ref</span>'
-                 '<span class="miss">gray - lab did not report it</span>'
-                 '</div>')
-    parts.append(f'<div class="sub" style="margin-top:14px;">Generated {datetime.now().strftime("%a %b %d %Y, %I:%M %p")} from {html_lib.escape(dispensary_name)} live menu snapshot.</div>')
+    return "".join(parts)
+
+
+def _latest_snapshot_for(dispensary_name):
+    """Pull the latest snapshot from dispensary_menu for a given store name.
+    Returns list of dicts with Decimal values converted to float."""
+    import decimal
+    conn = get_connection()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""SELECT * FROM dispensary_menu
+                   WHERE dispensary=%s
+                     AND snapshot_id=(SELECT snapshot_id FROM dispensary_menu
+                                      WHERE dispensary=%s
+                                      ORDER BY captured_at DESC LIMIT 1)""",
+                (dispensary_name, dispensary_name))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    for p in rows:
+        for k, v in list(p.items()):
+            if isinstance(v, decimal.Decimal):
+                p[k] = float(v)
+    return rows
+
+
+def write_comparison_html(products=None, dispensary_name=None, ref=_SECRET_MEETINGS_REF,
+                          ref_label="Secret Meetings (ref)", ref_thc=28.6, top_n=6,
+                          stores_to_show=("Conservatory", "Med Leaf"),
+                          icloud_dir=r"C:\Users\eewil\iCloudDrive\homebase",
+                          local_path="logs/secret_meetings_compare.html"):
+    """Build a freeze-pane HTML with one section per store and write to iCloud + logs.
+
+    Always renders every store in `stores_to_show` so the user gets both views regardless of
+    which one triggered the refresh. The freshly-captured (products, dispensary_name) pair is
+    used for that store's section; other stores are loaded from the latest DB snapshot.
+
+    Backward compat: passing just (products, dispensary_name) still works.
+    """
+    parts = [_HTML_HEAD,
+             '<h1>Secret Meetings &mdash; closest matches by terpene profile</h1>',
+             '<div class="sub">Each store has its own freeze-pane table below. Reference column is highlighted on the left of each. Terpene cells are highlighted when they differ from Secret Meetings by &ge;40% AND &ge;0.05 absolute. Gray = lab did not report. <b>Green column</b> = profile clone (every measured terp within 0.05 of reference).</div>',
+             '<div class="legend">'
+             '<span class="clone">green column = profile clone</span>'
+             '<span class="high">red = way more than ref</span>'
+             '<span class="low">amber = way less than ref</span>'
+             '<span class="miss">gray = lab did not report it</span>'
+             '</div>']
+
+    for store in stores_to_show:
+        if products is not None and dispensary_name == store:
+            store_products = products
+        else:
+            store_products = _latest_snapshot_for(store)
+        parts.append(_render_store_section(store_products, store, ref,
+                                            ref_label, ref_thc, top_n))
+
+    parts.append(f'<div class="sub" style="margin-top:24px;">Generated {datetime.now().strftime("%a %b %d %Y, %I:%M %p")}.</div>')
     parts.append('</body></html>')
 
     body = "".join(parts)
