@@ -249,8 +249,17 @@ def build_trip_email(dispensary_alias):
     parts.append('</div>')
     html_body = "".join(parts)
 
-    # Side-effect: refresh the side-by-side comparison HTML at iCloud + logs
+    # Side-effect: refresh ALL tracked stores so the side-by-side comparison HTML
+    # has live data for every section, not just the one the email was about.
     try:
+        for other in ("Conservatory", "Med Leaf"):
+            if other == name:
+                continue
+            try:
+                snapshot_menu(other.lower())  # lowered display name doubles as a valid alias
+            except Exception as e:
+                # If a refresh fails, fall back to the latest stored snapshot in DB.
+                print(f"[dispensary_planner] refresh of {other} failed: {e}")
         write_comparison_html(products, name)
     except Exception as e:
         # Don't fail the trip email if the comparison artifact has issues
@@ -325,24 +334,52 @@ _CELL_STYLE = {
 
 
 _HTML_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Secret Meetings - Side by Side</title>
 <style>
-  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fafafa; margin: 0; padding: 24px; color: #222; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fafafa; color: #222; padding: 16px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   h2.store { font-size: 16px; margin: 28px 0 4px; padding-top: 18px; border-top: 1px solid #ddd; }
   h2.store:first-of-type { border-top: none; padding-top: 0; }
   .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
-  .scroll { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; background: #fff; max-width:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04); margin-bottom: 8px; }
-  table { border-collapse: collapse; font-size: 13px; }
+  /* Scroll container — explicit width so sticky cols compute against a known viewport.
+     -webkit-overflow-scrolling enables momentum scrolling on iOS Safari. */
+  .scroll {
+    width: 100%;
+    overflow-x: scroll;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    margin-bottom: 8px;
+  }
+  /* Force the table to size to its content, never narrower than the scroll viewport.
+     Without this, sticky columns can mis-position in some browsers. */
+  table { border-collapse: separate; border-spacing: 0; font-size: 13px; width: max-content; min-width: 100%; }
   thead th { background:#f0f0f0; padding:10px 12px; text-align:left; font-weight:600;
-             border-bottom:2px solid #ccc; position:sticky; top:0; z-index:2; white-space:nowrap; }
+             border-bottom:2px solid #ccc; white-space:nowrap; }
   tbody td { white-space:nowrap; padding:8px 12px; border-bottom:1px solid #eee; }
-  th.sticky-l, td.sticky-l { position:sticky; left:0; background:#fff; z-index:3;
-                              font-weight:600; min-width:130px; box-shadow:1px 0 0 #ddd; }
-  thead th.sticky-l { z-index:4; background:#f0f0f0; }
-  th.sticky-r, td.sticky-r { position:sticky; left:130px; background:#fff8d6; z-index:3;
-                              font-weight:600; min-width:160px; box-shadow:1px 0 0 #d4c98a; }
-  thead th.sticky-r { z-index:4; background:#f5e9aa; }
+  /* Frozen first column */
+  th.sticky-l, td.sticky-l {
+    position: sticky; left: 0;
+    background: #fff;
+    font-weight: 600; min-width: 130px; max-width: 130px;
+    box-shadow: 1px 0 0 #ddd;
+    z-index: 3;
+  }
+  thead th.sticky-l { background: #f0f0f0; z-index: 4; }
+  /* Frozen second column (reference) — pinned right after sticky-l */
+  th.sticky-r, td.sticky-r {
+    position: sticky; left: 130px;
+    background: #fff8d6;
+    font-weight: 600; min-width: 160px; max-width: 160px;
+    box-shadow: 1px 0 0 #d4c98a;
+    z-index: 3;
+  }
+  thead th.sticky-r { background: #f5e9aa; z-index: 4; }
   .header-row td { background:#fafafa; font-size:11px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
   .legend { font-size:11px; color:#666; margin: 12px 0 28px; display:flex; gap:14px; flex-wrap:wrap; }
   .legend span { padding:2px 8px; border-radius:3px; }
@@ -353,6 +390,8 @@ _HTML_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
   td.exact, th.exact { background:#d6f5dc !important; }
   th.exact { color:#1f5e2c; }
   .empty { color: #999; font-style: italic; padding: 14px 0; font-size: 13px; }
+  /* Spacer column at the end — gives natural breathing room when scrolled all the way right */
+  td.tail-spacer, th.tail-spacer { min-width: 16px; padding: 0; border: none; background: transparent; }
 </style></head><body>"""
 
 
@@ -398,7 +437,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
             parts.append(f'<th class="exact">{html_lib.escape(c["label"])} <span style="color:#2a8a3e;">&#10003; clone</span></th>')
         else:
             parts.append(f'<th>{html_lib.escape(c["label"])}</th>')
-    parts.append('</tr></thead><tbody>')
+    parts.append('<th class="tail-spacer"></th></tr></thead><tbody>')
 
     def _row(label, key, fmtfn):
         row = ['<tr>',
@@ -407,7 +446,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
         for i, c in enumerate(cols[1:], start=1):
             cls = ' class="exact"' if i in exact_idx else ''
             row.append(f'<td{cls}>{fmtfn(c.get(key))}</td>')
-        row.append('</tr>')
+        row.append('<td class="tail-spacer"></td></tr>')
         parts.append("".join(row))
 
     _row("Brand", "brand", lambda v: html_lib.escape(v) if v else "&mdash;")
@@ -419,7 +458,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
     _row("Total terpenes", "_total_terps", lambda v: f"<b>{v:.2f}%</b>" if v else "&mdash;")
 
     parts.append('<tr class="header-row"><td class="sticky-l">&mdash; Terpenes (% of bud weight) &mdash;</td>'
-                 f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}</tr>')
+                 f'<td class="sticky-r"></td>{"<td></td>"*(len(cols)-1)}<td class="tail-spacer"></td></tr>')
 
     for k, lbl in zip(_TERP_KEYS, _TERP_LABELS):
         ref_val = cols[0].get(k)
@@ -433,7 +472,7 @@ def _render_store_section(products, dispensary_name, ref, ref_label, ref_thc, to
             cls = ' class="exact"' if i in exact_idx else ''
             txt = f"{cv:.2f}" if cv is not None else "&mdash;"
             row.append(f'<td{cls} style="{style}">{txt}</td>')
-        row.append('</tr>')
+        row.append('<td class="tail-spacer"></td></tr>')
         parts.append("".join(row))
 
     parts.append('</tbody></table></div>')
