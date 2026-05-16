@@ -39,6 +39,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 | Homebase iCloud Nudge | Daily 6:45 AM | `powershell.exe -WindowStyle Hidden` | Active |
 | Homebase Steps Sync | Daily 6:50 AM | `wscript.exe` + `steps_sync.bat` | Active |
 | Homebase Morning Summary | Daily 7:00 AM | `pythonw.exe send_summary.py` | Active |
+| Guapa PM Briefing | Daily 7:15 AM | `pythonw.exe guapa_pm.py --email` | Active |
 | Homebase Spotify Tracker | Every 5 min | `pythonw.exe spotify_tracker.py` | Active |
 | Homebase Commands | Every 5 min | `pythonw.exe commands.py` | Active |
 | Guapa Apply Editorial Suggestions | Every 5 min | `pythonw.exe apply-suggestions.py` | Active |
@@ -63,6 +64,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 - `strain_sync_run.py` — entry point for the 6:30 AM scheduled task (calls `sync_crops_catalog()`)
 - **Terpene coverage is structurally limited — don't re-investigate.** DispenseApp stores (Conservatory, Med Leaf, City Leaves, Green Wellness) populate terpenes via their API. Dutchie stores (MPX, Botanist, AC LEEF, Brute's, Public Absecon, Juniper, Atlantic Flower) do not: the schema's `terpenes` field returns null and `terpenesV2` doesn't exist on the `Products` type. COA URLs (`canonicalLabResultUrl`) are null on 100% of Dutchie products too — the dispensaries simply don't publish terps upstream. AC LEEF additionally publishes no cannabinoid data. Probed 5/02 (introspection blocked at Cloudflare, POSTs blocked, GET non-persisted queries work but the data isn't there). Cannabinoid coverage on Dutchie (THC/THCA/CBD/CBDA/CBG/CBN) IS extracted via `_du_extract_cannabinoids` from `cannabinoidsV2`.
 - `guapa_music.py` — parses guapa-data's DQ summary (coverage stats, editorial content, per-artist enrichment)
+- `guapa_pm.py` — daily 7:15 AM PM briefing across both Guapa repos (git log + catalog/coffee/editorial metrics, scored against a roadmap). Writes `pm-reports/pm-YYYY-MM-DD.md` + `pm-reports/task-queue.md` under `C:\Users\eewil\guapa\guapa-pm\` (operational output, not in this repo), and emails the HTML-styled briefing via `emailer.send_email`. Sends as its own separate email — does not piggyback on the morning summary. Schedule task XML lives at `guapa-pm-task.xml`; pythonw logs to `C:\Users\eewil\guapa\guapa-pm\guapa_pm.log`.
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
 - `health_steps.py` — full step CLI; use `--import-xml` to backfill from Apple Health export
