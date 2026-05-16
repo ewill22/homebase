@@ -38,6 +38,9 @@ def send_email(subject, body, to=None, attachments=None):
         part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(filepath)}")
         msg.attach(part)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    # 30s timeout — Gmail normally responds in <1s; without it a network
+    # hiccup blocks indefinitely and any caller scheduled via Task Scheduler
+    # sits idle until its ExecutionTimeLimit kills it.
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
         server.login(FROM, PASSWORD)
         server.sendmail(FROM, to, msg.as_string())
