@@ -177,7 +177,18 @@ ROADMAP = [
         "tier": 4,
         "status": "active",
         "team": "eric",
-        "notes": "njportal.com. Then EIN → bank account → trademark."
+        "since": "2026-05-16",  # day-counter on the top-of-briefing nag
+        "notes": "njportal.com. Blocks EIN, bank account, trademark filing. Nagged daily in the top banner."
+    },
+    {
+        "id": "trademark-filing",
+        "name": "File trademark (Guapa Data)",
+        "tier": 4,
+        "status": "blocked",
+        "team": "eric",
+        "since": "2026-05-16",
+        "blocked_by": "LLC filing (entity must exist first)",
+        "notes": "Final step in the chain: LLC -> EIN -> bank account -> trademark. Nagged daily."
     },
     {
         "id": "newsletter-provider",
@@ -532,6 +543,29 @@ def generate_briefing(days: int = 1) -> str:
     lines.append(f"Lookback: {days} day(s) | Generated: {datetime.now().strftime('%H:%M')}")
     lines.append(f"")
 
+    # ── Top-of-briefing nag for Eric-owned filings ──
+    # Renders only when there are open eric items. Day-counter on `since`
+    # is the lever — the older it gets, the more this stares back.
+    today_date = datetime.now().date()
+    eric_open = [
+        r for r in ROADMAP
+        if r.get("team") == "eric" and r.get("status") in ("active", "blocked")
+        and r.get("since")
+    ]
+    if eric_open:
+        lines.append("---")
+        lines.append("## ⚠️ ERIC: STILL OPEN")
+        lines.append("")
+        for item in eric_open:
+            since_date = datetime.strptime(item["since"], "%Y-%m-%d").date()
+            days_open = (today_date - since_date).days
+            day_label = "today" if days_open == 0 else f"{days_open} day{'s' if days_open != 1 else ''}"
+            blocker = f" — blocked by {item['blocked_by']}" if item.get("blocked_by") else ""
+            lines.append(f"- **{item['name']}** — open {day_label}{blocker}")
+            if item.get("notes"):
+                lines.append(f"  - {item['notes']}")
+        lines.append("")
+
     # ── Section 1: What Shipped ──
     lines.append("---")
     lines.append("## SHIPPED")
@@ -780,6 +814,7 @@ def briefing_to_html(md: str) -> str:
     i = 0
     in_table = False
     in_pre = False
+    in_eric_nag = False  # tracks the open yellow-banner <div> wrapping the Eric section
     list_stack: list[str] = []  # values: 'ul' or 'ol'
 
     def close_lists_to(target_depth: int):
@@ -880,12 +915,29 @@ def briefing_to_html(md: str) -> str:
             continue
         if line.startswith("## "):
             close_lists_to(0)
-            out.append(
-                '<h2 style="font-size:13px;font-weight:700;text-transform:uppercase;'
-                "letter-spacing:0.08em;color:#0a0a0a;margin:28px 0 12px 0;"
-                'padding-bottom:6px;border-bottom:1px solid #e5e5e5;">'
-                f"{_md_inline(line[3:])}</h2>"
-            )
+            heading = line[3:]
+            # Eric-nag section gets a loud yellow alert-box treatment so the
+            # day counter is impossible to scroll past.
+            if "ERIC: STILL OPEN" in heading:
+                out.append(
+                    '<div style="background:#fff8dc;border:2px solid #f0c014;'
+                    "border-radius:6px;padding:14px 18px;margin:18px 0 24px 0;\">"
+                    '<h2 style="font-size:14px;font-weight:700;'
+                    "text-transform:uppercase;letter-spacing:0.08em;color:#0a0a0a;"
+                    'margin:0 0 8px 0;padding:0;border:none;">'
+                    f"{_md_inline(heading)}</h2>"
+                )
+                in_eric_nag = True
+            else:
+                if in_eric_nag:
+                    out.append("</div>")
+                    in_eric_nag = False
+                out.append(
+                    '<h2 style="font-size:13px;font-weight:700;text-transform:uppercase;'
+                    "letter-spacing:0.08em;color:#0a0a0a;margin:28px 0 12px 0;"
+                    'padding-bottom:6px;border-bottom:1px solid #e5e5e5;">'
+                    f"{_md_inline(heading)}</h2>"
+                )
             i += 1
             continue
         if line.startswith("### "):
