@@ -195,6 +195,40 @@ ROADMAP = [
         "team": "eric",
         "notes": "Daily briefing + task queue for Claude Code sessions."
     },
+
+    # Backend hardening backlog — source: guapa-pm/backend-hardening-v2.md (2026-05-16)
+    {
+        "id": "harden-pydantic-settings",
+        "name": "Backend hardening: centralize config (pydantic-settings)",
+        "tier": 4,
+        "status": "active",
+        "team": "backend",
+        "notes": "Priority #1 (~1 session, foundation for the other hardening tasks). Single Settings class loaded from .env -> env -> defaults. Required vars (ANTHROPIC_API_KEY, EMAIL_ADDRESS, MySQL creds) fail at startup with a clear error instead of mid-pipeline. Spec: guapa-pm/backend-hardening-v2.md (TASK-2)."
+    },
+    {
+        "id": "harden-narrow-excepts",
+        "name": "Backend hardening: narrow broad excepts in ingestion paths",
+        "tier": 4,
+        "status": "active",
+        "team": "backend",
+        "notes": "Priority #2 (~1-2 sessions). Goal: zero `except Exception` inside ingestion/enrichment modules. Orchestrator-level catches are OK if they log AND notify (existing _notify_enrichment is the model). Each fix tends to surface a real bug. Ship incrementally. Spec: guapa-pm/backend-hardening-v2.md (TASK-3)."
+    },
+    {
+        "id": "harden-pydantic-external-apis",
+        "name": "Backend hardening: pydantic models for external API responses",
+        "tier": 4,
+        "status": "active",
+        "team": "backend",
+        "notes": "Priority #3 (~3 sessions, one per service). Validate at the network boundary; eliminate defensive .get('k', {}).get('n') chains. Order: MusicBrainz first (ingest_musicbrainz / enrich_tracks / enrich_members), then Wikidata SPARQL (classify_wikidata), then Shopify /products.json. Spec: guapa-pm/backend-hardening-v2.md (TASK-1)."
+    },
+    {
+        "id": "harden-json-logging",
+        "name": "Backend hardening: JSON logging",
+        "tier": 4,
+        "status": "parked",
+        "team": "backend",
+        "notes": "Explicitly deferred per the memo author. Revisit only if more log consumers join (alerting service, dashboard, eval harness) or cross-run queryability becomes needed ('all MusicBrainz 503s in May'). Spec: guapa-pm/backend-hardening-v2.md (TASK-4)."
+    },
 ]
 
 # ─── Autonomy Tiers ─────────────────────────────────────────────────────────
