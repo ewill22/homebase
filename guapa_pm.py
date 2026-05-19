@@ -67,11 +67,16 @@ DQ_REPORTS_DIR = BACKEND_REPO / "music" / "reports"
 
 ROADMAP = [
     # ── Tier 1: Complete what's started ──
+    # `auto_shipping: True` means: this is actually running daily without
+    # human intervention. The briefing's [SHIPPING] pill is reserved for
+    # these. Anything else that's "active" displays as [TODO] — honest
+    # signal that it's waiting on someone.
     {
         "id": "spotify-enrich",
         "name": "Spotify URL enrichment (full catalog)",
         "tier": 1,
         "status": "active",
+        "auto_shipping": True,
         "team": "backend",
         "metric_key": "spotify_coverage_catalog",
         "target": 80,
@@ -82,6 +87,7 @@ ROADMAP = [
         "name": "Release date backfill (MusicBrainz CC0)",
         "tier": 1,
         "status": "active",
+        "auto_shipping": True,
         "team": "backend",
         "metric_key": "release_date_coverage",
         "target": 100,
@@ -92,6 +98,7 @@ ROADMAP = [
         "name": "Genre classification (remaining artists)",
         "tier": 1,
         "status": "active",
+        "auto_shipping": True,
         "team": "backend",
         "metric_key": "genre_coverage",
         "target": 100,
@@ -102,6 +109,7 @@ ROADMAP = [
         "name": "Track-level enrichment (Genius, writers, covers)",
         "tier": 1,
         "status": "active",
+        "auto_shipping": True,
         "team": "backend",
         "metric_key": "track_enrichment_albums",
         "target": None,  # ongoing
@@ -643,8 +651,23 @@ def generate_briefing(days: int = 1) -> str:
                        3: "Real Estate", 4: "Future / Ops"}
         lines.append(f"### Tier {tier} — {tier_labels[tier]}")
         for item in tier_items:
-            status_icon = {"active": "🟢", "blocked": "🔴", "done": "✅",
-                           "parked": "⏸️"}.get(item["status"], "⚪")
+            # Honest status: SHIPPING is reserved for items actually running
+            # daily (auto_shipping=True). Anything else "active" is TODO —
+            # makes the human-time backlog visible instead of pretending
+            # every roadmap line is in motion.
+            st = item["status"]
+            if st == "done":
+                label = "DONE"
+            elif st == "blocked":
+                label = "BLOCKED"
+            elif st == "parked":
+                label = "PARKED"
+            elif st == "active" and item.get("auto_shipping"):
+                label = "SHIPPING"
+            elif st == "active":
+                label = "TODO"
+            else:
+                label = st.upper()
 
             progress_str = ""
             if "current_value" in item:
@@ -653,7 +676,7 @@ def generate_briefing(days: int = 1) -> str:
                 else:
                     progress_str = f" — {item['current_value']}%"
 
-            lines.append(f"- {status_icon} **{item['name']}**{progress_str}")
+            lines.append(f"- [{label}] **{item['name']}**{progress_str}")
             if item.get("blocked_by"):
                 lines.append(f"  - Blocked: {item['blocked_by']}")
             if item.get("notes"):
@@ -789,19 +812,45 @@ def generate_task_queue() -> str:
 # particular) strip <style> blocks. Targets only the markdown features the
 # briefing actually emits (no general-purpose Markdown coverage).
 
+# Status pill palette — picked from Eric's 2026-05-18 skate-trail photo
+# (forest greens, BUMP-sign yellow, rust shorts, path gray). The first three
+# also reappear as accent colors throughout the email so the whole thing
+# feels of-a-piece.
+_PILL_STYLES = {
+    "SHIPPING": ("#588157", "#ffffff"),  # forest green — actually running daily
+    "TODO":     ("#f0c014", "#1a1a1a"),  # caution yellow — waiting on human time
+    "BLOCKED":  ("#b85c38", "#ffffff"),  # rust — waiting on external dep
+    "PARKED":   ("#888888", "#ffffff"),  # path gray — explicitly deferred
+    "DONE":     ("#3a5a40", "#ffffff"),  # deep forest — completed
+}
+
+
 def _md_inline(s: str) -> str:
-    """Escape HTML and apply inline md: **bold**, *italic*, `code`."""
+    """Escape HTML and apply inline md: **bold**, *italic*, `code`, [PILL]."""
     import html as _h
     s = _h.escape(s)
     s = re.sub(
         r'`([^`]+)`',
-        r'<code style="background:#f4f4f5;padding:1px 6px;border-radius:3px;'
+        r'<code style="background:#f4f1de;padding:1px 6px;border-radius:3px;'
         r'font-family:\'SF Mono\',Menlo,Consolas,monospace;font-size:12px;'
-        r'color:#0a4a6e;">\1</code>',
+        r'color:#3a5a40;">\1</code>',
         s,
     )
     s = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', s)
     s = re.sub(r'(?<!\*)\*([^*\n]+)\*(?!\*)', r'<em>\1</em>', s)
+
+    def _pill(m: 're.Match[str]') -> str:
+        label = m.group(1)
+        bg, fg = _PILL_STYLES[label]
+        return (
+            f'<span style="display:inline-block;background:{bg};color:{fg};'
+            "font-size:10px;font-weight:700;text-transform:uppercase;"
+            "letter-spacing:0.06em;padding:2px 7px;border-radius:3px;"
+            'vertical-align:1px;margin-right:6px;">'
+            f"{label}</span>"
+        )
+
+    s = re.sub(r'\[(SHIPPING|TODO|BLOCKED|PARKED|DONE)\]', _pill, s)
     return s
 
 
@@ -827,16 +876,17 @@ def briefing_to_html(md: str) -> str:
             out.append("</tbody></table>")
             in_table = False
 
-    # Wrapping <body> + container
+    # Wrapping <body> + container. Photo-palette accents: forest-green
+    # section headers + tinted body bg + extra line-height for readability.
     out.append(
         '<!DOCTYPE html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         "</head>"
-        '<body style="margin:0;padding:0;background:#f7f7f8;">'
-        '<div style="max-width:720px;margin:0 auto;padding:24px;'
+        '<body style="margin:0;padding:0;background:#f4f1de;">'
+        '<div style="max-width:720px;margin:0 auto;padding:28px;'
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,"
         "Helvetica,Arial,sans-serif;color:#1a1a1a;background:#ffffff;"
-        'line-height:1.55;">'
+        'line-height:1.65;">'
     )
 
     while i < len(lines):
@@ -879,10 +929,10 @@ def briefing_to_html(md: str) -> str:
                 )
                 for c in cells:
                     out.append(
-                        '<th style="text-align:left;padding:8px 12px;'
-                        "border-bottom:2px solid #e5e5e5;font-weight:600;"
-                        "color:#666;font-size:11.5px;text-transform:uppercase;"
-                        'letter-spacing:0.04em;">'
+                        '<th style="text-align:left;padding:10px 14px;'
+                        "border-bottom:2px solid #588157;font-weight:700;"
+                        "color:#3a5a40;font-size:11.5px;text-transform:uppercase;"
+                        'letter-spacing:0.06em;background:#f4f1de;">'
                         f"{_md_inline(c)}</th>"
                     )
                 out.append("</tr></thead><tbody>")
@@ -933,9 +983,9 @@ def briefing_to_html(md: str) -> str:
                     out.append("</div>")
                     in_eric_nag = False
                 out.append(
-                    '<h2 style="font-size:13px;font-weight:700;text-transform:uppercase;'
-                    "letter-spacing:0.08em;color:#0a0a0a;margin:28px 0 12px 0;"
-                    'padding-bottom:6px;border-bottom:1px solid #e5e5e5;">'
+                    '<h2 style="font-size:14px;font-weight:700;text-transform:uppercase;'
+                    "letter-spacing:0.09em;color:#3a5a40;margin:34px 0 14px 0;"
+                    'padding-bottom:8px;border-bottom:2px solid #588157;">'
                     f"{_md_inline(heading)}</h2>"
                 )
             i += 1
@@ -943,8 +993,8 @@ def briefing_to_html(md: str) -> str:
         if line.startswith("### "):
             close_lists_to(0)
             out.append(
-                '<h3 style="font-size:13px;font-weight:600;color:#444;'
-                f'margin:18px 0 6px 0;">{_md_inline(line[4:])}</h3>'
+                '<h3 style="font-size:13px;font-weight:600;color:#3a5a40;'
+                f'margin:20px 0 8px 0;">{_md_inline(line[4:])}</h3>'
             )
             i += 1
             continue
