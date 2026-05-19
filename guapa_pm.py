@@ -199,14 +199,6 @@ ROADMAP = [
         "notes": "Final step in the chain: LLC -> EIN -> bank account -> trademark. Nagged daily."
     },
     {
-        "id": "newsletter-provider",
-        "name": "Wire up newsletter service",
-        "tier": 4,
-        "status": "parked",
-        "team": "frontend",
-        "notes": "Form exists, needs Buttondown/Mailchimp backend."
-    },
-    {
         "id": "pm-automation",
         "name": "PM automation (this script + Agent Teams)",
         "tier": 4,
@@ -687,21 +679,19 @@ def generate_briefing(days: int = 1) -> str:
     lines.append("---")
     lines.append("## RECOMMENDED NEXT")
     lines.append("")
-    lines.append("*Sorted by tier, filtered to active/unblocked items.*")
+    lines.append("*Active items waiting on human time. Auto-shipping work and external blockers excluded.*")
     lines.append("")
 
-    recommended = []
-    for item in ROADMAP:
-        if item["status"] in ("active",) and item.get("team") != "external":
-            # Check if metric exists and is below target
-            mk = item.get("metric_key")
-            if mk and mk in all_metrics and item.get("target"):
-                if all_metrics[mk] < item["target"]:
-                    recommended.append(item)
-            elif not mk:
-                # No metric = needs manual assessment
-                recommended.append(item)
-
+    # This section is a TO-DO list, not a status report. So:
+    #   - skip auto_shipping items (they run continuously, not a decision)
+    #   - skip team=external (someone else's job)
+    # The remaining active items are real human-time work for Eric or team.
+    recommended = [
+        item for item in ROADMAP
+        if item["status"] == "active"
+        and not item.get("auto_shipping")
+        and item.get("team") != "external"
+    ]
     recommended.sort(key=lambda x: x["tier"])
 
     for i, item in enumerate(recommended, 1):
@@ -716,22 +706,31 @@ def generate_briefing(days: int = 1) -> str:
     lines.append("## NEEDS YOUR DECISION")
     lines.append("")
 
-    blocked = [r for r in ROADMAP if r["status"] == "blocked"]
-    if blocked:
-        for item in blocked:
-            lines.append(f"- **{item['name']}**: {item.get('blocked_by', 'Unknown blocker')}")
+    # Only surface blocked items where Eric can actually decide something.
+    # Items where someone else is the blocker (team=external) belong in
+    # status updates, not in a decision queue. Eric-team items are already
+    # shouted at the top of the briefing, so don't repeat them here.
+    decision_blocked = [
+        r for r in ROADMAP
+        if r["status"] == "blocked"
+        and r.get("team") not in ("external", "eric")
+    ]
+    review_commits = classified["review_needed"]
+
+    if not decision_blocked and not review_commits:
+        lines.append("Nothing today.")
         lines.append("")
     else:
-        lines.append("Nothing blocked right now.")
-        lines.append("")
-
-    # Review-needed commits
-    if classified["review_needed"]:
-        lines.append("### Commits needing review")
-        for c in classified["review_needed"]:
-            tag = "BE" if c["repo"] == "guapa-data" else "FE"
-            lines.append(f"- [{tag}] `{c['hash']}` {c['message']}")
-        lines.append("")
+        if decision_blocked:
+            for item in decision_blocked:
+                lines.append(f"- **{item['name']}**: {item.get('blocked_by', 'Unknown blocker')}")
+            lines.append("")
+        if review_commits:
+            lines.append("### Commits needing review")
+            for c in review_commits:
+                tag = "BE" if c["repo"] == "guapa-data" else "FE"
+                lines.append(f"- [{tag}] `{c['hash']}` {c['message']}")
+            lines.append("")
 
     # ── Section 6: Latest Pipeline Output ──
     if latest_summary:
