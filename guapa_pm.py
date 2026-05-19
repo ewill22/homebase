@@ -1226,7 +1226,20 @@ def main():
 
             cfg = get_config()
             to_addr = cfg["user"]["send_to_email"]
-            subject = f"Guapa PM Briefing - {datetime.now().strftime('%A %Y-%m-%d')}"
+            # Each daily briefing should land as its own Gmail conversation.
+            # Gmail threads on a "normalized subject" stem and is happy to
+            # strip a trailing date — so a subject like "Guapa PM Briefing -
+            # <date>" still threads, even though the date varies. Leading
+            # the subject with "Day N" (anchored to the first briefing on
+            # 2026-05-15) gives every day a structurally different stem,
+            # which is what reliably breaks threading. Within-day re-sends
+            # share the same Day N and still thread, which is what we want.
+            anchor = datetime(2026, 5, 15).date()
+            day_n = (datetime.now().date() - anchor).days + 1
+            subject = (
+                f"Guapa PM Day {day_n} | "
+                f"{datetime.now().strftime('%a %b %d')}"
+            )
             send_email(
                 subject,
                 {"text": briefing, "html": briefing_to_html(briefing)},
