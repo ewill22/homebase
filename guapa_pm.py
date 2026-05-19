@@ -447,59 +447,6 @@ def get_latest_dq_report() -> str | None:
     return None
 
 
-def parse_enrichment_highlights(summary: str) -> dict:
-    """Extract headline numbers from the enrichment summary text.
-
-    Returns an empty dict if nothing matches — caller can fall back to
-    omitting the section entirely. We don't need every stat; the METRICS
-    table already carries coverage %, so this picks out the bits METRICS
-    doesn't: today's deltas + track-level enrichment.
-    """
-    h: dict = {}
-    if not summary:
-        return h
-
-    m = re.search(r"Total changes:\s*(\d+)", summary)
-    if m:
-        h["total"] = int(m.group(1))
-
-    for key, pat in (
-        ("spotify_added",  r"Spotify URLs added\s+(\d+)"),
-        ("release_dates",  r"Release dates filled\s+(\d+)"),
-        ("cover_art",      r"Cover art filled\s+(\d+)"),
-        ("wiki_added",     r"Wikipedia URLs added\s+(\d+)"),
-        ("broken_links",   r"Broken links found\s+(\d+)"),
-    ):
-        m = re.search(pat, summary)
-        if m and int(m.group(1)) > 0:
-            h[key] = int(m.group(1))
-
-    m = re.search(r"MB enriched albums\s+(\d+)/(\d+)\s+\((\d+)%\)", summary)
-    if m:
-        h["mb_done"] = int(m.group(1))
-        h["mb_total"] = int(m.group(2))
-        h["mb_pct"] = int(m.group(3))
-
-    m = re.search(r"Genius URLs\s+\d+/\d+\s+\((\d+)%\)", summary)
-    if m:
-        h["genius_pct"] = int(m.group(1))
-
-    return h
-
-
-def get_latest_summary() -> str | None:
-    """Find and read the most recent enrichment summary."""
-    if not DQ_REPORTS_DIR.exists():
-        return None
-    summary_files = sorted(DQ_REPORTS_DIR.glob("summary-*.txt"), reverse=True)
-    if summary_files:
-        try:
-            return summary_files[0].read_text(encoding="utf-8")[:2000]
-        except Exception:
-            return None
-    return None
-
-
 # ─── Roadmap Diffing ─────────────────────────────────────────────────────────
 
 def classify_commits(commits: list[dict]) -> dict:
@@ -574,8 +521,6 @@ def generate_briefing(days: int = 1) -> str:
     roadmap_progress = calculate_roadmap_progress(all_metrics)
 
     latest_dq = get_latest_dq_report()
-    latest_summary = get_latest_summary()
-
     # ── Build the briefing ──
     lines = []
     lines.append(f"# Guapa PM Briefing — {day_name} {today}")
@@ -772,54 +717,9 @@ def generate_briefing(days: int = 1) -> str:
                 lines.append(f"- [{tag}] `{c['hash']}` {c['message']}")
             lines.append("")
 
-    # ── Section 6: Latest Pipeline Output ──
-    if latest_summary:
-        h = parse_enrichment_highlights(latest_summary)
-        if h:
-            lines.append("---")
-            lines.append("## LATEST ENRICHMENT")
-            lines.append("")
-
-            # Today's deltas — one tight line
-            deltas = []
-            if h.get("spotify_added"):
-                deltas.append(f"+{h['spotify_added']} Spotify URLs")
-            if h.get("release_dates"):
-                deltas.append(f"+{h['release_dates']} release dates")
-            if h.get("cover_art"):
-                deltas.append(f"+{h['cover_art']} cover art")
-            if h.get("wiki_added"):
-                deltas.append(f"+{h['wiki_added']} Wikipedia URLs")
-            if h.get("total"):
-                head = f"**Today:** {h['total']} total changes"
-                if deltas:
-                    head += " — " + ", ".join(deltas)
-                lines.append(head)
-                lines.append("")
-            elif deltas:
-                lines.append(f"**Today:** {', '.join(deltas)}")
-                lines.append("")
-
-            # Track-level enrichment (not in METRICS section)
-            track_bits = []
-            if h.get("mb_pct") is not None:
-                track_bits.append(
-                    f"MB-enriched albums: {h['mb_pct']}% "
-                    f"({h['mb_done']:,}/{h['mb_total']:,})"
-                )
-            if h.get("genius_pct") is not None:
-                track_bits.append(f"Genius URLs: {h['genius_pct']}%")
-            if h.get("broken_links"):
-                track_bits.append(f"⚠️ {h['broken_links']} broken link(s) flagged")
-            for b in track_bits:
-                lines.append(f"- {b}")
-            if track_bits:
-                lines.append("")
-
-            lines.append(
-                "*Full report: `guapa-data/music/reports/summary-YYYY-MM-DD.txt`*"
-            )
-            lines.append("")
+    # Enrichment summary is intentionally omitted here — it ships in the
+    # homebase morning email at 7:00 AM (15 min before this briefing), so
+    # repeating it would be noise.
 
     # ── Footer ──
     lines.append("---")
