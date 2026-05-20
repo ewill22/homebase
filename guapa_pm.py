@@ -1085,6 +1085,55 @@ def briefing_to_html(md: str) -> str:
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
+def publish_task_queue(task_queue: str) -> None:
+    """Commit the task queue into guapa-data so remote Claude Code sessions
+    can read it.
+
+    A cloud Claude Code sandbox can see git repos but not Eric's local disk,
+    so the canonical local copy at guapa-pm/pm-reports/task-queue.md is
+    invisible to the morning dev routine. This mirrors it to a tracked path.
+
+    Best-effort: any git failure logs a warning but never breaks the
+    briefing, which is the script's primary job. Commits use the [auto]
+    prefix so the next briefing classifies them as pipeline noise, not
+    human commits needing review.
+    """
+    try:
+        pm_dir = BACKEND_REPO / "pm"
+        pm_dir.mkdir(exist_ok=True)
+        (pm_dir / "task-queue.md").write_text(task_queue, encoding="utf-8")
+
+        # Nothing to do if the queue is byte-identical to what's committed.
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "pm/task-queue.md"],
+            cwd=str(BACKEND_REPO), capture_output=True, text=True, timeout=30,
+        )
+        if not status.stdout.strip():
+            print("Task queue unchanged — nothing to publish.")
+            return
+
+        subprocess.run(
+            ["git", "add", "pm/task-queue.md"],
+            cwd=str(BACKEND_REPO), check=True, timeout=30,
+            capture_output=True, text=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "[auto] Update PM task queue"],
+            cwd=str(BACKEND_REPO), check=True, timeout=30,
+            capture_output=True, text=True,
+        )
+        push = subprocess.run(
+            ["git", "push"], cwd=str(BACKEND_REPO),
+            capture_output=True, text=True, timeout=90,
+        )
+        if push.returncode == 0:
+            print("Task queue published to guapa-data/pm/task-queue.md")
+        else:
+            print(f"Task queue committed locally; push failed: {push.stderr.strip()}")
+    except Exception as e:
+        print(f"Warning: could not publish task queue to guapa-data: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Guapa PM Daily Briefing")
     parser.add_argument("--dry-run", action="store_true",
@@ -1131,6 +1180,10 @@ def main():
 
     TASK_QUEUE_FILE.write_text(task_queue, encoding="utf-8")
     print(f"Task queue updated: {TASK_QUEUE_FILE}")
+
+    # Mirror the queue into guapa-data so the remote morning dev routine
+    # (a cloud Claude Code session) can actually read it.
+    publish_task_queue(task_queue)
 
     # Send as its own separate email (sibling imports — same source as homebase's
     # morning summary, so recipient + creds live in one place).

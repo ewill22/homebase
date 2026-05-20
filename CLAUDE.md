@@ -74,6 +74,7 @@ Spotify Tracker (every 5 min) → spotify_plays
   - **NEEDS YOUR DECISION** only surfaces blocked items where `team in (backend, frontend)` — i.e., things Eric could actually unstick. External-blocked items (Maria/MLS) and Eric-team items (already nagged) are filtered out.
   - **Day-N subject** (`Guapa PM Day {N} | {weekday} {date}`) breaks Gmail threading per email. The N is days since the anchor 2026-05-15. Each day's email lands as its own conversation; within-day re-sends still thread (intentional, for debugging).
   - **Enrichment recap is intentionally NOT in this briefing** — the homebase morning summary at 7:00 AM already carries it. Don't re-add unless that changes.
+  - **`publish_task_queue()`** mirrors the task queue into `guapa-data/pm/task-queue.md` and commits it (`[auto]` prefix) each run. Reason: the canonical copy at `guapa-pm/pm-reports/task-queue.md` is on local disk, invisible to a cloud Claude Code session — the remote morning dev routine reads the repo copy instead. Best-effort; a git failure logs a warning and doesn't break the briefing.
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
 - `health_steps.py` — full step CLI; use `--import-xml` to backfill from Apple Health export
