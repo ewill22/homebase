@@ -115,6 +115,15 @@ ROADMAP = [
         "target": None,  # ongoing
         "notes": "50 albums/day via MusicBrainz. Genius URLs at 100% coverage."
     },
+    {
+        "id": "coffee-offerings-refresh",
+        "name": "Coffee offerings refresh (Shopify)",
+        "tier": 1,
+        "status": "active",
+        "auto_shipping": True,
+        "team": "backend",
+        "notes": "Daily 5:15 AM — 25 Shopify roaster /products.json feeds. Auto-commits coffee-offerings.js when the data changes."
+    },
 
     # ── Tier 2: Strengthen the Third Space ──
     {
@@ -619,8 +628,15 @@ def generate_briefing(days: int = 1) -> str:
     lines.append("## ROADMAP")
     lines.append("")
 
+    # Items already shouted in the top nag banner (team=eric with a `since`
+    # date) are skipped here — no point listing the LLC / trademark twice.
+    roadmap_visible = [
+        r for r in roadmap_progress
+        if not (r.get("team") == "eric" and r.get("since"))
+    ]
+
     for tier in [1, 2, 3, 4]:
-        tier_items = [r for r in roadmap_progress if r["tier"] == tier]
+        tier_items = [r for r in roadmap_visible if r["tier"] == tier]
         if not tier_items:
             continue
 
@@ -711,10 +727,9 @@ def generate_briefing(days: int = 1) -> str:
                 lines.append(f"- **{item['name']}**: {item.get('blocked_by', 'Unknown blocker')}")
             lines.append("")
         if review_commits:
-            lines.append("### Commits needing review")
+            lines.append("### Commits to review")
             for c in review_commits:
-                tag = "BE" if c["repo"] == "guapa-data" else "FE"
-                lines.append(f"- [{tag}] `{c['hash']}` {c['message']}")
+                lines.append(f"- {c['message']}")
             lines.append("")
 
     # Enrichment summary is intentionally omitted here — it ships in the
