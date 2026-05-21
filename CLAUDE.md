@@ -40,6 +40,7 @@ Spotify Tracker (every 5 min) → spotify_plays
 | Homebase Steps Sync | Daily 6:50 AM | `wscript.exe` + `steps_sync.bat` | Active |
 | Homebase Morning Summary | Daily 7:00 AM | `pythonw.exe send_summary.py` | Active |
 | Guapa PM Briefing | Daily 7:15 AM | `pythonw.exe guapa_pm.py --email` | Active |
+| Guapa Dev Routine | Daily 3:00 PM | `pythonw.exe guapa_dev_routine.py` | **Disabled** — run manually |
 | Homebase Spotify Tracker | Every 5 min | `pythonw.exe spotify_tracker.py` | Active |
 | Homebase Commands | Every 5 min | `pythonw.exe commands.py` | Active |
 | Guapa Apply Editorial Suggestions | Every 5 min | `pythonw.exe apply-suggestions.py` | Active |
@@ -76,6 +77,11 @@ Spotify Tracker (every 5 min) → spotify_plays
   - **Enrichment recap is intentionally NOT in this briefing** — the homebase morning summary at 7:00 AM already carries it. Don't re-add unless that changes.
   - **`publish_task_queue()`** mirrors the task queue into `guapa-data/pm/task-queue.md` and commits it (`[auto]` prefix) each run. Reason: the canonical copy at `guapa-pm/pm-reports/task-queue.md` is on local disk, invisible to a cloud Claude Code session — the remote morning dev routine reads the repo copy instead. Best-effort; a git failure logs a warning and doesn't break the briefing.
   - **Merged-PR auto-sync.** `sync_completed_from_merged_prs()` lists merged `auto/*` PRs across both repos and records each one's roadmap id (the branch is `auto/<id>`) in `guapa-pm/completed-items.json`. `apply_completed_overrides()` then flips any ROADMAP item whose id is in that file to `status=done`. Net effect: when Eric merges a dev-routine PR, the roadmap marks itself done — no hand edit. The dev routine MUST name branches `auto/<exact roadmap id>` for this to work; the task queue prints each item's id so it can. Manually setting `status` in the ROADMAP list still works and is independent.
+- `guapa_dev_routine.py` — the autonomous dev routine. Resets isolated dev clones at `C:\Users\eewil\guapa-dev\` (guapa-data + guapa-site) to pristine latest-origin, invokes Claude Code headless (`claude.exe -p --permission-mode bypassPermissions`) with the routine prompt, then emails Eric the outcome. The headless session advances one REVIEW-tier roadmap item and opens a PR — never merges (PR-gate model: Eric reviews/merges from his phone). Pro-only — local Claude Code, no cloud routine. Scoped to skip `real-estate/api/`. Runs in `guapa-dev/` so the live repos under `guapa/` are never touched; pythonw logs to `C:\Users\eewil\guapa-dev\guapa_dev_routine.log`.
+  - **The prompt** lives at `C:\Users\eewil\guapa\guapa-pm\morning-routine-prompt.md` (the runner reads everything after the first `---`). Edit the prompt there, not in the runner.
+  - **Scheduled task** `Guapa Dev Routine` (3 PM daily) is registered but **DISABLED** — Eric runs it manually for now: `schtasks /Run /TN "Guapa Dev Routine"`. Task XML: `guapa-dev-task.xml`. To go automatic, enable the task.
+  - **`--dry-run`** picks an item and writes a plan without branching/implementing/opening a PR — cheap way to preview behavior.
+  - **PR build check:** `guapa-site/.github/workflows/pr-build-check.yml` runs `npm run build` on every PR, so a non-compiling routine PR gets a red X before merge. guapa-data tasks self-verify via `pytest`.
 - `spotify.py` — all play queries filter `HOUR(played_at) BETWEEN 5 AND 22`
 - `steps.py` — reads `~/.health_steps_cache.json`; monthly goal is 7,500 steps/day avg
 - `health_steps.py` — full step CLI; use `--import-xml` to backfill from Apple Health export
