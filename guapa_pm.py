@@ -44,6 +44,11 @@ PM_OUTPUT_DIR = GUAPA_ROOT / "guapa-pm"
 PM_REPORTS_DIR = PM_OUTPUT_DIR / "pm-reports"
 TASK_QUEUE_FILE = PM_REPORTS_DIR / "task-queue.md"
 LOG_FILE = PM_OUTPUT_DIR / "guapa_pm.log"
+# Persistent record of roadmap ids completed via merged auto/* PRs.
+# {id: "YYYY-MM-DD"}. Once an id lands here it stays done, even after the
+# merged PR ages off GitHub's recent-PR list.
+COMPLETED_FILE = PM_OUTPUT_DIR / "completed-items.json"
+GH_EXE = r"C:\Program Files\GitHub CLI\gh.exe"
 
 # Files to parse for metrics
 MUSIC_CATALOG = FRONTEND_REPO / "public" / "data" / "music-catalog.json"
@@ -766,15 +771,14 @@ def generate_task_queue() -> str:
     lines.append("Items marked DECISION need a conversation first.")
     lines.append("")
 
-    # Autonomous work (always approved)
+    # Autonomous work — the auto_shipping pipelines. Not build tasks for the
+    # dev routine; they already run on cron.
     lines.append("## APPROVED (autonomous, ship it)")
     lines.append("")
     auto_items = [r for r in ROADMAP if r["status"] == "active"
-                  and r.get("team") in ("backend",)
-                  and any(kw in r["name"].lower()
-                          for kw in ["enrichment", "backfill", "coverage", "classification"])]
+                  and r.get("auto_shipping")]
     for item in auto_items:
-        lines.append(f"- [ ] {item['name']}")
+        lines.append(f"- [ ] {item['name']}  (id: {item['id']})")
         if item.get("notes"):
             lines.append(f"      {item['notes']}")
     lines.append("")
@@ -782,12 +786,16 @@ def generate_task_queue() -> str:
     # Needs review
     lines.append("## REVIEW (build it, Eric reviews before push)")
     lines.append("")
+    lines.append("When the dev routine works one of these, it MUST name its branch")
+    lines.append("`auto/<id>` using the exact id shown — that's how a merged PR gets")
+    lines.append("matched back to its roadmap item and auto-marked done.")
+    lines.append("")
     review_items = [r for r in ROADMAP if r["status"] == "active"
                     and r.get("team") in ("frontend", "backend")
                     and r not in auto_items]
     for item in review_items:
         team = item.get("team", "???").upper()
-        lines.append(f"- [ ] [{team}] {item['name']}")
+        lines.append(f"- [ ] [{team}] {item['name']}  (id: {item['id']})")
         if item.get("notes"):
             lines.append(f"      {item['notes']}")
     lines.append("")
@@ -797,7 +805,7 @@ def generate_task_queue() -> str:
     lines.append("")
     decision_items = [r for r in ROADMAP if r["status"] in ("blocked", "parked")]
     for item in decision_items:
-        lines.append(f"- [ ] {item['name']}")
+        lines.append(f"- [ ] {item['name']}  (id: {item['id']})")
         if item.get("blocked_by"):
             lines.append(f"      Blocked: {item['blocked_by']}")
         elif item.get("notes"):
@@ -1142,6 +1150,73 @@ def publish_task_queue(task_queue: str) -> None:
         print(f"Warning: could not publish task queue to guapa-data: {e}")
 
 
+def sync_completed_from_merged_prs() -> None:
+    """Find merged auto/* PRs across both repos and record their roadmap ids
+    in COMPLETED_FILE.
+
+    The dev routine names every branch auto/<roadmap-id>, so the id is just
+    the branch name minus the auto/ prefix. Best-effort — a gh failure logs
+    a warning and leaves the file untouched.
+    """
+    try:
+        completed = {}
+        if COMPLETED_FILE.exists():
+            completed = json.loads(COMPLETED_FILE.read_text(encoding="utf-8"))
+        before = len(completed)
+
+        for repo in ("ewill22/guapa-data", "ewill22/guapa-site"):
+            res = subprocess.run(
+                [GH_EXE, "pr", "list", "--repo", repo, "--state", "merged",
+                 "--limit", "50", "--json", "headRefName,mergedAt"],
+                capture_output=True, text=True, timeout=60,
+                encoding="utf-8", errors="replace",
+            )
+            if res.returncode != 0:
+                print(f"  gh pr list failed for {repo}: {res.stderr.strip()}")
+                continue
+            for pr in json.loads(res.stdout or "[]"):
+                branch = pr.get("headRefName", "")
+                if not branch.startswith("auto/"):
+                    continue
+                rid = branch[len("auto/"):]
+                if rid and rid not in completed:
+                    completed[rid] = (pr.get("mergedAt") or "")[:10]
+
+        if len(completed) != before:
+            COMPLETED_FILE.write_text(
+                json.dumps(completed, indent=2, sort_keys=True),
+                encoding="utf-8")
+            print(f"Completed-items synced: {len(completed) - before} new "
+                  f"({len(completed)} total)")
+        else:
+            print("Completed-items: nothing new from merged PRs.")
+    except Exception as e:
+        print(f"Warning: could not sync completed items: {e}")
+
+
+def apply_completed_overrides() -> None:
+    """Flip any ROADMAP item whose id is in COMPLETED_FILE to status=done.
+
+    This is the mechanism that lets a merged PR show up as done in the
+    briefing without anyone hand-editing the ROADMAP list. Items already
+    marked done in the source are left alone.
+    """
+    try:
+        if not COMPLETED_FILE.exists():
+            return
+        completed = json.loads(COMPLETED_FILE.read_text(encoding="utf-8"))
+        for item in ROADMAP:
+            if item.get("id") in completed and item["status"] != "done":
+                item["status"] = "done"
+                when = completed[item["id"]]
+                item["notes"] = (
+                    f"Auto-marked done {when} (merged auto/{item['id']} PR). "
+                    + item.get("notes", "")
+                ).strip()
+    except Exception as e:
+        print(f"Warning: could not apply completed overrides: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Guapa PM Daily Briefing")
     parser.add_argument("--dry-run", action="store_true",
@@ -1167,6 +1242,13 @@ def main():
             sys.stdout.reconfigure(encoding="utf-8")
         except (AttributeError, OSError):
             pass
+
+    # Reconcile the roadmap with reality before rendering anything: pull in
+    # any merged auto/* PRs, then flip the matching items to done. This is
+    # what keeps the briefing honest without a manual ROADMAP edit.
+    if not args.dry_run:
+        sync_completed_from_merged_prs()
+    apply_completed_overrides()
 
     # Generate briefing
     briefing = generate_briefing(days=args.days)
