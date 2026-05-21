@@ -130,9 +130,17 @@ ROADMAP = [
         "id": "coffee-brazil-drilldown",
         "name": "Brazil coffee drill-down (Conab data)",
         "tier": 2,
+        "status": "done",
+        "team": "frontend",
+        "notes": "Shipped 2026-05-21 (PR #1, the dev routine's first merge). Follow-up: source a CC-licensed Brazil states SVG — the map slot is a placeholder. Tracked separately as coffee-brazil-svg."
+    },
+    {
+        "id": "coffee-brazil-svg",
+        "name": "Source Brazil states SVG for the coffee map",
+        "tier": 2,
         "status": "active",
         "team": "frontend",
-        "notes": "Same recipe as Colombia. Biggest leverage — Brazil is ~40% global share."
+        "notes": "Follow-up from PR #1. The Brazil drill-down map slot is a placeholder. Source a CC-licensed Brazil states SVG (Wikimedia Commons), add an aria-label per state, wire it into CountryDetailPanel's Brazil branch — same shape as the Colombia SVG. Capture the attribution."
     },
     {
         "id": "coffee-v2-rendering",
